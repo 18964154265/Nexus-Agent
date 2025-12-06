@@ -19,6 +19,8 @@ type Store interface {
 
 	CreateAPIKey(k *APIKey) *APIKey
 	ListAPIKeysByUser(userID string) []*APIKey
+	DeleteAPIKey(id string) bool
+	GetAPIKey(id string) *APIKey
 
 	CreateIntegration(in *UserIntegration) *UserIntegration
 	ListIntegrationsByUser(userID string) []*UserIntegration

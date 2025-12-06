@@ -177,32 +177,29 @@ func (h *Handler) Logout(c context.Context, ctx *app.RequestContext) {
 }
 
 // Me 获取当前用户信息
+// internal/handler/auth.go
+
 func (h *Handler) Me(c context.Context, ctx *app.RequestContext) {
-	// 1. 从 Context 获取 UserID (由中间件设置)
 	userID, exists := GetUserIDFromCtx(ctx)
 	if !exists {
 		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
 		return
 	}
 
-	// 2. 查库
 	user := h.Store.FindUserByID(userID)
 	if user == nil {
 		ctx.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
 		return
 	}
 
-	// 3. 返回 (注意：Store 里的 User 包含 Password Hash，实际返回时应该定义一个 Response DTO 去掉它)
-	// 这里简单起见，先把 Password 置空再返回，不影响数据库（因为是指针，但 MemoryStore 是内存的，
-	// 为了防止修改内存数据，最好是返回 Copy 或 DTO。这里为了演示，手动置空）
-
-	// 安全做法：构造返回对象
+	// 构造返回，使用 CreatedAt
 	safeUser := map[string]interface{}{
-		"id":      user.ID,
-		"email":   user.Email,
-		"name":    user.Name,
-		"roles":   user.Roles,
-		"created": user.Created,
+		"id":         user.ID,
+		"email":      user.Email,
+		"name":       user.Name,
+		"roles":      user.Roles,
+		"created_at": user.CreatedAt, // 这里改成了 created_at
+		// "updated_at": user.UpdatedAt, // 可选
 	}
 
 	ctx.JSON(http.StatusOK, safeUser)

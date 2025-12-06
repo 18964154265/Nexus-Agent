@@ -10,145 +10,145 @@ import (
 )
 
 type User struct {
-	ID       string
-	Email    string
-	Name     string
-	Password string
-	Roles    []string
-	Created  time.Time
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Password  string    `json:"password"`
+	Roles     []string  `json:"roles"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type RefreshToken struct {
-	Token   string
-	UserID  string
-	Expire  time.Time
-	Revoked bool
+	Token   string    `json:"token"`
+	UserID  string    `json:"user_id"`
+	Expire  time.Time `json:"expire"`
+	Revoked bool      `json:"revoked"`
 }
 
 type APIKey struct {
-	ID         string
-	UserID     string
-	Name       string
-	Prefix     string
-	KeyHash    string
-	LastUsedAt time.Time
-	ExpiresAt  time.Time
-	CreatedAt  time.Time
+	ID         string    `json:"id"`
+	UserID     string    `json:"user_id"`
+	Name       string    `json:"name"`
+	Prefix     string    `json:"prefix"`
+	KeyHash    string    `json:"key_hash"`
+	LastUsedAt time.Time `json:"last_used_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type UserIntegration struct {
-	ID                   string
-	UserID               string
-	Provider             string
-	EncryptedCredentials string
-	DisplayLabel         string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                   string    `json:"id"`
+	UserID               string    `json:"user_id"`
+	Provider             string    `json:"provider"`
+	EncryptedCredentials string    `json:"encrypted_credentials"`
+	DisplayLabel         string    `json:"display_label"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 type KnowledgeBase struct {
-	ID          string
-	UserID      string
-	Name        string
-	Description string
-	IsPublic    bool
-	MetaInfo    map[string]interface{}
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          string                 `json:"id"`
+	UserID      string                 `json:"user_id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	IsPublic    bool                   `json:"is_public"`
+	MetaInfo    map[string]interface{} `json:"meta_info"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
 }
 
 type Agent struct {
-	ID               string
-	OwnerUserID      string
-	Name             string
-	Description      string
-	ModelName        string
-	SystemPrompt     string
-	Temperature      float64
-	KnowledgeBaseIDs []string
-	Status           string
-	ExtraConfig      map[string]interface{}
-	Type             string
-	Capabilities     []string
-	Concurrency      int
-	Tags             []string
-	Meta             map[string]interface{}
-	Token            string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID               string                 `json:"id"`
+	OwnerUserID      string                 `json:"owner_user_id"`
+	Name             string                 `json:"name"`
+	Description      string                 `json:"description"`
+	ModelName        string                 `json:"model_name"`
+	SystemPrompt     string                 `json:"system_prompt"`
+	Temperature      float64                `json:"temperature"`
+	KnowledgeBaseIDs []string               `json:"knowledge_base_ids"`
+	Status           string                 `json:"status"`
+	ExtraConfig      map[string]interface{} `json:"extra_config"`
+	Type             string                 `json:"type"`
+	Capabilities     []string               `json:"capabilities"`
+	Concurrency      int                    `json:"concurrency"`
+	Tags             []string               `json:"tags"`
+	Meta             map[string]interface{} `json:"meta"`
+	Token            string                 `json:"token"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
 }
 
 type MCPServer struct {
-	ID               string
-	AgentID          string
-	Name             string
-	TransportType    string
-	ConnectionConfig map[string]interface{}
-	IsGlobal         bool
-	Status           string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID               string                 `json:"id"`
+	AgentID          string                 `json:"agent_id"`
+	Name             string                 `json:"name"`
+	TransportType    string                 `json:"transport_type"`
+	ConnectionConfig map[string]interface{} `json:"connection_config"`
+	IsGlobal         bool                   `json:"is_global"`
+	Status           string                 `json:"status"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
 }
 
 type MCPTool struct {
-	ID          string
-	ServerID    string
-	Name        string
-	Description string
-	InputSchema map[string]interface{}
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          string                 `json:"id"`
+	ServerID    string                 `json:"server_id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	InputSchema map[string]interface{} `json:"input_schema"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
 }
 
 type ChatSession struct {
-	ID        string
-	UserID    string
-	AgentID   string
-	Title     string
-	Summary   string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	AgentID   string    `json:"agent_id"`
+	Title     string    `json:"title"`
+	Summary   string    `json:"summary"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Run struct {
-	ID            string
-	SessionID     string
-	UserID        string
-	AgentID       string
-	ParentRunID   string
-	TraceID       string
-	Status        string
-	InputPayload  map[string]interface{}
-	OutputPayload map[string]interface{}
-	UsageMetadata map[string]interface{}
-	StartedAt     time.Time
-	FinishedAt    time.Time
+	ID            string                 `json:"id"`
+	SessionID     string                 `json:"session_id"`
+	UserID        string                 `json:"user_id"`
+	AgentID       string                 `json:"agent_id"`
+	ParentRunID   string                 `json:"parent_run_id"`
+	TraceID       string                 `json:"trace_id"`
+	Status        string                 `json:"status"`
+	InputPayload  map[string]interface{} `json:"input_payload"`
+	OutputPayload map[string]interface{} `json:"output_payload"`
+	UsageMetadata map[string]interface{} `json:"usage_metadata"`
+	StartedAt     time.Time              `json:"started_at"`
+	FinishedAt    time.Time              `json:"finished_at"`
 }
 
 type RunStep struct {
-	ID            string
-	RunID         string
-	StepType      string
-	Name          string
-	InputPayload  map[string]interface{}
-	OutputPayload map[string]interface{}
-	Status        string
-	ErrorMessage  string
-	LatencyMS     int
-	StartedAt     time.Time
-	FinishedAt    time.Time
+	ID            string                 `json:"id"`
+	RunID         string                 `json:"run_id"`
+	StepType      string                 `json:"step_type"`
+	Name          string                 `json:"name"`
+	InputPayload  map[string]interface{} `json:"input_payload"`
+	OutputPayload map[string]interface{} `json:"output_payload"`
+	Status        string                 `json:"status"`
+	ErrorMessage  string                 `json:"error_message"`
+	LatencyMS     int                    `json:"latency_ms"`
+	StartedAt     time.Time              `json:"started_at"`
+	FinishedAt    time.Time              `json:"finished_at"`
 }
 
 type ChatMessage struct {
-	ID         string
-	SessionID  string
-	RunID      string
-	Role       string
-	Content    map[string]interface{}
-	ToolCallID string
-	TokenCount int
-	IsHidden   bool
-	CreatedAt  time.Time
+	ID         string                 `json:"id"`
+	SessionID  string                 `json:"session_id"`
+	RunID      string                 `json:"run_id"`
+	Role       string                 `json:"role"`
+	Content    map[string]interface{} `json:"content"`
+	ToolCallID string                 `json:"tool_call_id"`
+	TokenCount int                    `json:"token_count"`
+	IsHidden   bool                   `json:"is_hidden"`
+	CreatedAt  time.Time              `json:"created_at"`
 }
 
 type MemoryStore struct {
@@ -185,7 +185,7 @@ func (m *MemoryStore) CreateUser(u *User) (*User, bool) {
 		return nil, false
 	}
 	u.ID = randID()
-	u.Created = time.Now()
+	u.CreatedAt = time.Now()
 	m.users[u.ID] = u
 	m.usersByE[u.Email] = u
 	return u, true
@@ -296,6 +296,24 @@ func (m *MemoryStore) ListAPIKeysByUser(userID string) []*APIKey {
 		}
 	}
 	return res
+}
+
+// internal/store/store.go
+
+func (m *MemoryStore) GetAPIKey(id string) *APIKey {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.apiKeys[id]
+}
+
+func (m *MemoryStore) DeleteAPIKey(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.apiKeys[id]; ok {
+		delete(m.apiKeys, id)
+		return true
+	}
+	return false
 }
 
 func (m *MemoryStore) CreateIntegration(in *UserIntegration) *UserIntegration {

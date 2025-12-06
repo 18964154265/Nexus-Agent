@@ -26,44 +26,38 @@ type AgentReq struct {
 }
 
 type AgentResp struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Type        string   `json:"type"` // user vs system
-	Tags        []string `json:"tags"`
-	ModelName   string   `json:"model_name"`
-	CreatedAt   string   `json:"created_at"` // 格式化后的时间字符串
+	*store.Agent // 嵌入原始结构
 
-	// 注意：这里我们故意【不返回】 SystemPrompt，
-	// 只有在 GetAgent 详情页才返回，List 列表页不返回以节省流量
+	// 1. 覆盖字段 (Shadowing)
+	// 这个 string 类型的 CreatedAt 会覆盖 store.Agent 里的 CreatedAt
+	// 前端收到的 json key 也是 "created_at"
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+
+	// 2. 屏蔽敏感字段
+	// 显式忽略 SystemPrompt 等
+	SystemPrompt string `json:"-"`
+	ExtraConfig  any    `json:"-"`
+	OwnerUserID  string `json:"-"`
 }
 
-// 辅助函数：把数据库模型转换为响应模型
-func toAgentResp(a *store.Agent) AgentResp {
-	return AgentResp{
-		ID:          a.ID,
-		Name:        a.Name,
-		Description: a.Description,
-		Type:        a.Type,
-		Tags:        a.Tags,
-		ModelName:   a.ModelName,
-		// 把 time.Time 格式化为前端喜欢的字符串
-		CreatedAt: a.CreatedAt.Format("2006-01-02 15:04:05"),
+func toAgentResp(a *store.Agent) *AgentResp {
+	return &AgentResp{
+		Agent:     a,                                         // 直接把 store 对象塞进去
+		CreatedAt: a.CreatedAt.Format("2006-01-02 15:04:05"), // 格式化时间
+		UpdatedAt: a.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}
 }
 
 // ListAgents 获取列表
 func (h *Handler) ListAgents(c context.Context, ctx *app.RequestContext) {
-	// 1. 从数据库拿原始数据
 	agents := h.Store.ListAgents()
 
-	// 2. 【核心修改】转换为 Resp 对象
-	respList := make([]AgentResp, 0, len(agents))
+	respList := make([]*AgentResp, 0, len(agents))
 	for _, a := range agents {
 		respList = append(respList, toAgentResp(a))
 	}
 
-	// 3. 发送清洗过的数据给前端
 	ctx.JSON(http.StatusOK, map[string]interface{}{
 		"data": respList,
 	})
@@ -107,14 +101,11 @@ func (h *Handler) CreateAgent(c context.Context, ctx *app.RequestContext) {
 		Type:             "user", // 用户创建的标记为 user
 	}
 
-	// 调用 Store 创建
-	// 注意：需确保 Store 接口已更新支持返回 error
 	createdAgent := h.Store.CreateAgent(agent)
 
-	// 返回创建成功的精简信息
 	ctx.JSON(http.StatusCreated, map[string]interface{}{
 		"id":   createdAgent.ID,
-		"data": toAgentResp(createdAgent), // 使用 Resp
+		"data": toAgentResp(createdAgent),
 	})
 }
 
