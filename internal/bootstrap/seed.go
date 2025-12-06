@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"log"
+	"time"
 
 	"example.com/agent-server/internal/store"
 )
@@ -105,5 +106,54 @@ func SeedDevOpsTeam(s *store.MemoryStore) {
 		// 如果你接了 Postgres，这里需要先 CheckExist
 		s.CreateAgent(agent)
 		log.Printf("Initialized Agent: %s", agent.Name)
+	}
+}
+
+// 预定义一些mcpserver
+// 定义固定 ID，方便后续代码引用（比如在 Agent 的 System Prompt 里暗示这些 ID）
+const (
+	GitServerID = "00000000-0000-0000-0000-000000000001"
+	FSServerID  = "00000000-0000-0000-0000-000000000002"
+)
+
+// SeedMCPServers 初始化核心工具箱
+func SeedMCPServers(s *store.MemoryStore) {
+	servers := []*store.MCPServer{
+		{
+			ID:            GitServerID,
+			Name:          "git-server",
+			IsGlobal:      true, // 全局可用
+			Status:        "active",
+			TransportType: "stdio",
+			// 模拟真实的 uv 启动命令
+			ConnectionConfig: map[string]interface{}{
+				"command": "uv",
+				"args":    []string{"run", "mcp-server-git", "--repository", "."},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		},
+		{
+			ID:            FSServerID,
+			Name:          "filesystem-server",
+			IsGlobal:      true,
+			Status:        "active",
+			TransportType: "stdio",
+			// 模拟允许访问当前目录
+			ConnectionConfig: map[string]interface{}{
+				"command": "uv",
+				"args":    []string{"run", "mcp-server-filesystem", "--allowed-path", "."},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		},
+	}
+
+	for _, srv := range servers {
+		// 检查是否存在 (简单通过 ID 查)
+		if existing := s.GetMCPServer(srv.ID); existing == nil {
+			s.CreateMCPServer(srv)
+			log.Printf("Initialized MCP Server: %s", srv.Name)
+		}
 	}
 }

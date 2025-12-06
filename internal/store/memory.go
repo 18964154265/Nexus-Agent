@@ -84,7 +84,7 @@ type MCPServer struct {
 	Name             string                 `json:"name"`
 	TransportType    string                 `json:"transport_type"`
 	ConnectionConfig map[string]interface{} `json:"connection_config"`
-	IsGlobal         bool                   `json:"is_global"`
+	IsGlobal         bool                   `json:"is_global"` //这是平台预先定义好的几个常用server
 	Status           string                 `json:"status"`
 	CreatedAt        time.Time              `json:"created_at"`
 	UpdatedAt        time.Time              `json:"updated_at"`
@@ -395,6 +395,44 @@ func (m *MemoryStore) ListMCPServersByAgent(agentID string) []*MCPServer {
 		}
 	}
 	return res
+}
+
+func (m *MemoryStore) GetMCPServer(id string) *MCPServer {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.mcpServers[id]
+}
+
+// ListAllMCPServers (可选，用于 List 时不传参的情况)
+func (m *MemoryStore) ListAllMCPServers() []*MCPServer {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	res := []*MCPServer{}
+	for _, s := range m.mcpServers {
+		res = append(res, s)
+	}
+	return res
+}
+
+func (m *MemoryStore) FindMCPServerByName(agentID string, name string) *MCPServer {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// 1. 优先找私有的
+	for _, s := range m.mcpServers {
+		if s.AgentID == agentID && s.Name == name {
+			return s
+		}
+	}
+
+	// 2. 找不到，找全局的
+	for _, s := range m.mcpServers {
+		if s.IsGlobal && s.Name == name {
+			return s
+		}
+	}
+
+	return nil
 }
 
 func (m *MemoryStore) CreateMCPTool(t *MCPTool) *MCPTool {

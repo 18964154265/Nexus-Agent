@@ -15,6 +15,7 @@ func main() {
 
 	// 2. 初始化预设的 Agent 团队 (Manager, Coder 等)
 	bootstrap.SeedDevOpsTeam(db)
+	bootstrap.SeedMCPServers(db)
 
 	// 3. 初始化 Handler (注入 db)
 	// 注意：jwt-secret 应该从环境变量读取，这里为了演示写死

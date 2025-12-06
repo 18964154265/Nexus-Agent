@@ -253,6 +253,14 @@ CREATE INDEX idx_users_status ON users(status);
 CREATE INDEX idx_agents_owner ON agents(owner_user_id);
 CREATE INDEX idx_mcp_tools_server ON mcp_tools(server_id);
 
+CREATE UNIQUE INDEX idx_mcp_servers_private_unique 
+ON mcp_servers (agent_id, name) 
+WHERE agent_id IS NOT NULL;
+
+CREATE UNIQUE INDEX idx_mcp_servers_global_unique 
+ON mcp_servers (name) 
+WHERE is_global = true;
+
 -- Chat History (高频查询)
 CREATE INDEX idx_chat_sessions_user ON chat_sessions(user_id, updated_at DESC);
 CREATE INDEX idx_chat_messages_session ON chat_messages(session_id, created_at ASC);
