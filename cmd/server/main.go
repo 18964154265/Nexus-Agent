@@ -6,6 +6,7 @@ import (
 	"example.com/agent-server/internal/bootstrap"
 	"example.com/agent-server/internal/handler"
 	myhttp "example.com/agent-server/internal/http"
+	"example.com/agent-server/internal/middleware"
 	"example.com/agent-server/internal/store"
 )
 
@@ -23,6 +24,12 @@ func main() {
 
 	// 4. 初始化 Hertz Server
 	srv := server.Default()
+
+	//5.注册中间件
+	srv.Use(middleware.Recovery())
+	srv.Use(middleware.RequestID())
+	srv.Use(middleware.AccessLog())
+	srv.Use(middleware.Cors())
 
 	// 5. 注册路由
 	myhttp.RegisterRoutes(srv, h, "your-secure-jwt-secret-key")
