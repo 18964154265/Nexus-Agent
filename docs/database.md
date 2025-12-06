@@ -67,57 +67,7 @@
   - `ts timestamptz not null`
   - 索引：`(task_id)`、`(ts)`、`(event_type)`
 
-### RAG 相关
-- `rag_datasets`
-  - `id uuid pk`
-  - `agent_id uuid references agents(id) on delete set null`
-  - `owner_user_id uuid references users(id) on delete cascade`
-  - `name text not null`
-  - `description text`
-  - `created_at timestamptz not null`
-  - `updated_at timestamptz not null`
-  - 约束：`unique(owner_user_id, name)`
 
-- `rag_documents`
-  - `id uuid pk`
-  - `dataset_id uuid not null references rag_datasets(id) on delete cascade`
-  - `source_uri text`（文件URL/路径）
-  - `mime_type text`
-  - `status text not null`（ingested|chunked|indexed）
-  - `created_at timestamptz not null`
-  - `updated_at timestamptz not null`
-  - 索引：`(dataset_id)`、`(status)`
-
-- `rag_chunks`
-  - `id uuid pk`
-  - `dataset_id uuid not null references rag_datasets(id) on delete cascade`
-  - `document_id uuid not null references rag_documents(id) on delete cascade`
-  - `content text not null`
-  - `metadata jsonb default '{}'`
-  - `embedding vector(1536)`（需 `pgvector`，维度按模型调整；SQLite 可替代列为 `blob`）
-  - `chunk_index int not null`
-  - `created_at timestamptz not null`
-  - 索引：`(dataset_id)`、`(document_id)`、`(chunk_index)`、`embedding` 向量索引（IVFFLAT/HNSW）
-
-- `rag_indexes`
-  - `id uuid pk`
-  - `dataset_id uuid not null references rag_datasets(id) on delete cascade`
-  - `engine text not null`（pgvector|milvus|weaviate|qdrant）
-  - `status text not null`（building|ready|failed）
-  - `config jsonb not null`
-  - `created_at timestamptz not null`
-  - `updated_at timestamptz not null`
-
-- `rag_queries`
-  - `id uuid pk`
-  - `dataset_id uuid not null references rag_datasets(id) on delete cascade`
-  - `user_id uuid references users(id) on delete set null`
-  - `query_text text not null`
-  - `top_k int default 5`
-  - `filters jsonb default '{}'`
-  - `results jsonb`（检索到的 chunk 摘要与分数）
-  - `created_at timestamptz not null`
-  - 索引：`(dataset_id)`、`(user_id)`、`(created_at)`
 
 ### MCP 相关
 - `mcp_providers`
@@ -185,19 +135,11 @@
   - `Type string`、`Input map[string]any`、`Priority int`、`Status string`
   - `Result map[string]any`、`Error string`
   - 审计与时间字段
-- RAG
-  - Dataset/Document/Chunk/Index/Query 对应结构体；`Chunk.Embedding []float32`（或 pgvector 映射）
+
 - MCP
   - Provider/Tool/Session/Call 对应结构体；`Schema map[string]any`
 
 ## 接口设计（预留）
-- RAG
-  - `POST /api/rag/datasets` 创建数据集（name, description, agent_id）
-  - `GET /api/rag/datasets` 列表；`GET /api/rag/datasets/:id` 详情
-  - `POST /api/rag/datasets/:id/documents` 上传/登记文档（支持文件或 URI）
-  - `POST /api/rag/datasets/:id/chunks` 自定义分片（可选）
-  - `POST /api/rag/datasets/:id/index` 构建索引（engine, config）
-  - `POST /api/rag/query` 检索（dataset_id, query_text, top_k, filters）→ 返回 chunk 摘要与分数
 
 - MCP
   - `POST /api/mcp/providers` 创建 Provider（agent_id, name, base_url, auth_config）
@@ -225,7 +167,3 @@
 - 迁移工具：`golang-migrate`，迁移文件位于 `configs/migrations`
 - 开发环境：SQLite 可去掉向量列或用 `blob` 占位；生产切换到 Postgres + pgvector
 
-## 审核点
-- 关系是否满足“用户-任务-Agent”主线且能扩展 RAG/MCP
-- 约束与索引是否可支撑常见查询与高并发
-- 接口是否覆盖创建/登记/检索/调用的关键路径

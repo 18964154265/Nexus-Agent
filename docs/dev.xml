@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+  <key id="d0" for="node" attr.name="label" attr.type="string"/>
+  <key id="d1" for="node" attr.name="fields" attr.type="string"/>
+  <key id="d2" for="edge" attr.name="relation" attr.type="string"/>
+  <key id="d3" for="edge" attr.name="multiplicity" attr.type="string"/>
+  <graph id="NexusDesign" edgedefault="directed">
+    <node id="User"><data key="d0">User</data><data key="d1">id,email,name,roles,status,created_at,updated_at</data></node>
+    <node id="APIKey"><data key="d0">APIKey</data><data key="d1">id,user_id,name,prefix,key_hash,expires_at</data></node>
+    <node id="UserIntegration"><data key="d0">UserIntegration</data><data key="d1">id,user_id,provider,encrypted_credentials,display_label</data></node>
+    <node id="KnowledgeBase"><data key="d0">KnowledgeBase</data><data key="d1">id,user_id,name,is_public,meta_info</data></node>
+    <node id="Agent"><data key="d0">Agent</data><data key="d1">id,owner_user_id,name,model_name,system_prompt,temperature,status,extra_config,knowledge_base_ids</data></node>
+    <node id="MCPServer"><data key="d0">MCPServer</data><data key="d1">id,agent_id,name,transport_type,connection_config,is_global,status</data></node>
+    <node id="MCPTool"><data key="d0">MCPTool</data><data key="d1">id,server_id,name,input_schema,description</data></node>
+    <node id="ChatSession"><data key="d0">ChatSession</data><data key="d1">id,user_id,agent_id,title,summary,created_at,updated_at</data></node>
+    <node id="Run"><data key="d0">Run</data><data key="d1">id,session_id,user_id,agent_id,parent_run_id,trace_id,status,input_payload,output_payload,usage_metadata,started_at,finished_at</data></node>
+    <node id="RunStep"><data key="d0">RunStep</data><data key="d1">id,run_id,step_type,name,input_payload,output_payload,status,error_message,latency_ms,started_at,finished_at</data></node>
+    <node id="ChatMessage"><data key="d0">ChatMessage</data><data key="d1">id,session_id,run_id,role,content.type,content,presentational,is_hidden,created_at</data></node>
+    <edge id="e1" source="User" target="Agent"><data key="d2">owns</data><data key="d3">0..n</data></edge>
+    <edge id="e2" source="User" target="ChatSession"><data key="d2">creates</data><data key="d3">0..n</data></edge>
+    <edge id="e3" source="Agent" target="MCPServer"><data key="d2">hosts</data><data key="d3">0..n</data></edge>
+    <edge id="e4" source="MCPServer" target="MCPTool"><data key="d2">provides</data><data key="d3">1..n</data></edge>
+    <edge id="e5" source="MCPServer" target="KnowledgeBase"><data key="d2">uses</data><data key="d3">0..n</data></edge>
+    <edge id="e6" source="ChatSession" target="Run"><data key="d2">contains</data><data key="d3">1..n</data></edge>
+    <edge id="e7" source="Run" target="Run"><data key="d2">parent</data><data key="d3">0..n</data></edge>
+    <edge id="e8" source="Run" target="Agent"><data key="d2">executes_by</data><data key="d3">1</data></edge>
+    <edge id="e9" source="Run" target="RunStep"><data key="d2">has_steps</data><data key="d3">0..n</data></edge>
+    <edge id="e10" source="ChatSession" target="ChatMessage"><data key="d2">has_messages</data><data key="d3">1..n</data></edge>
+    <edge id="e11" source="Run" target="ChatMessage"><data key="d2">emits</data><data key="d3">0..n</data></edge>
+    <edge id="e12" source="RunStep" target="ChatMessage"><data key="d2">produces</data><data key="d3">0..n</data></edge>
+    <edge id="e13" source="User" target="KnowledgeBase"><data key="d2">owns</data><data key="d3">0..n</data></edge>
+  </graph>
+</graphml>

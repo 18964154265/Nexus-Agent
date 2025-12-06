@@ -1,29 +1,31 @@
 package main
 
 import (
-	"os"
+	"github.com/cloudwego/hertz/pkg/app/server"
 
-	"example.com/agent-server/internal/http"
-	"example.com/agent-server/internal/middleware"
-
-	hertzServer "github.com/cloudwego/hertz/pkg/app/server"
+	"example.com/agent-server/internal/bootstrap"
+	"example.com/agent-server/internal/handler"
+	myhttp "example.com/agent-server/internal/http"
+	"example.com/agent-server/internal/store"
 )
 
 func main() {
-	addr := os.Getenv("HTTP_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		secret = "dev-secret"
-	}
+	// 1. 【核心修改】使用构造函数初始化 DB，确保所有 map 都已 make
+	db := store.NewMemoryStore()
 
-	h := hertzServer.Default(hertzServer.WithHostPorts(addr))
-	h.Use(middleware.RequestID())
-	h.Use(middleware.CORS())
+	// 2. 初始化预设的 Agent 团队 (Manager, Coder 等)
+	bootstrap.SeedDevOpsTeam(db)
 
-	http.RegisterRoutes(h, secret)
+	// 3. 初始化 Handler (注入 db)
+	// 注意：jwt-secret 应该从环境变量读取，这里为了演示写死
+	h := handler.New(db, "your-secure-jwt-secret-key")
 
-	h.Spin()
+	// 4. 初始化 Hertz Server
+	srv := server.Default()
+
+	// 5. 注册路由
+	myhttp.RegisterRoutes(srv, h, "your-secure-jwt-secret-key")
+
+	// 6. 启动服务
+	srv.Spin()
 }

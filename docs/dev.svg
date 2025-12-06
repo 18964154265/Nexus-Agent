@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="600" viewBox="0 0 1000 600">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+    <style>
+      .box { fill:#F7FAFC; stroke:#4A5568; stroke-width:2; rx:8; ry:8; }
+      .title { font-family:Arial,Helvetica,sans-serif; font-size:16px; font-weight:bold; fill:#2D3748; }
+      .fields { font-family:Arial,Helvetica,sans-serif; font-size:12px; fill:#4A5568; }
+      .edge { stroke:#2D3748; stroke-width:2; marker-end:url(#arrow); }
+      .label { font-family:Arial,Helvetica,sans-serif; font-size:12px; fill:#2D3748; }
+    </style>
+  </defs>
+
+  <!-- Nodes -->
+  <!-- User -->
+  <rect class="box" x="60" y="60" width="220" height="90" />
+  <text class="title" x="170" y="85" text-anchor="middle">User</text>
+  <text class="fields" x="70" y="105">id,email,name,roles,status</text>
+
+  <!-- ChatSession -->
+  <rect class="box" x="60" y="200" width="240" height="90" />
+  <text class="title" x="180" y="225" text-anchor="middle">ChatSession</text>
+  <text class="fields" x="70" y="245">id,user_id,agent_id,title,summary</text>
+
+  <!-- Agent -->
+  <rect class="box" x="360" y="60" width="260" height="90" />
+  <text class="title" x="490" y="85" text-anchor="middle">Agent</text>
+  <text class="fields" x="370" y="105">id,owner_user_id,name,model_name,status</text>
+
+  <!-- MCPServer -->
+  <rect class="box" x="660" y="60" width="240" height="90" />
+  <text class="title" x="780" y="85" text-anchor="middle">MCPServer</text>
+  <text class="fields" x="670" y="105">id,agent_id,transport_type,status</text>
+
+  <!-- MCPTool -->
+  <rect class="box" x="920" y="60" width="140" height="90" />
+  <text class="title" x="990" y="85" text-anchor="middle">MCPTool</text>
+  <text class="fields" x="930" y="105">id,server_id,name</text>
+
+  <!-- KnowledgeBase -->
+  <rect class="box" x="660" y="200" width="260" height="90" />
+  <text class="title" x="790" y="225" text-anchor="middle">KnowledgeBase</text>
+  <text class="fields" x="670" y="245">id,user_id,name,is_public</text>
+
+  <!-- Edges -->
+  <!-- User -> ChatSession -->
+  <line class="edge" x1="170" y1="150" x2="180" y2="200" />
+  <text class="label" x="190" y="175">creates 0..n</text>
+
+  <!-- User -> Agent -->
+  <line class="edge" x1="280" y1="100" x2="360" y2="100" />
+  <text class="label" x="300" y="90">owns 0..n</text>
+
+  <!-- Agent -> MCPServer -->
+  <line class="edge" x1="620" y1="100" x2="660" y2="100" />
+  <text class="label" x="630" y="90">hosts 0..n</text>
+
+  <!-- MCPServer -> MCPTool -->
+  <line class="edge" x1="900" y1="100" x2="920" y2="100" />
+  <text class="label" x="910" y="90">provides 1..n</text>
+
+  <!-- MCPServer -> KnowledgeBase -->
+  <line class="edge" x1="780" y1="150" x2="790" y2="200" />
+  <text class="label" x="800" y="175">uses 0..n</text>
+
+  <!-- ChatSession -> Run -->
+  <rect class="box" x="60" y="340" width="240" height="90" />
+  <text class="title" x="180" y="365" text-anchor="middle">Run</text>
+  <text class="fields" x="70" y="385">id,session_id,agent_id,status,trace_id</text>
+  <line class="edge" x1="180" y1="290" x2="180" y2="340" />
+  <text class="label" x="190" y="315">contains 1..n</text>
+
+  <!-- Run -> RunStep -->
+  <rect class="box" x="340" y="340" width="240" height="90" />
+  <text class="title" x="460" y="365" text-anchor="middle">RunStep</text>
+  <text class="fields" x="350" y="385">id,run_id,step_type,status</text>
+  <line class="edge" x1="300" y1="385" x2="340" y2="385" />
+  <text class="label" x="310" y="375">has_steps 0..n</text>
+
+  <!-- ChatMessage -->
+  <rect class="box" x="620" y="340" width="300" height="100" />
+  <text class="title" x="770" y="365" text-anchor="middle">ChatMessage</text>
+  <text class="fields" x="630" y="385">id,session_id,run_id,role,content.type,content</text>
+  <text class="fields" x="630" y="402">presentational,is_hidden,created_at</text>
+  <!-- ChatSession -> ChatMessage -->
+  <line class="edge" x1="300" y1="385" x2="620" y2="385" />
+  <text class="label" x="430" y="375">has_messages 1..n</text>
+  <!-- Run -> ChatMessage -->
+  <line class="edge" x1="180" y1="385" x2="620" y2="355" />
+  <text class="label" x="360" y="355">emits 0..n</text>
+  <!-- RunStep -> ChatMessage -->
+  <line class="edge" x1="580" y1="385" x2="620" y2="395" />
+  <text class="label" x="590" y="410">produces 0..n</text>
+
+  <!-- Title -->
+  <text x="520" y="30" text-anchor="middle" class="title">Nexus Agent Schema Relationships</text>
+
+  <!-- Title -->
+  <text x="500" y="40" text-anchor="middle" class="title">Nexus Agent System Design</text>
+</svg>
