@@ -5,6 +5,9 @@ go 1.24.0
 require (
 	github.com/cloudwego/hertz v0.7.3
 	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/google/uuid v1.6.0
+	github.com/hertz-contrib/cors v0.1.0
+	github.com/hertz-contrib/requestid v1.1.0
 	golang.org/x/crypto v0.45.0
 )
 
@@ -16,7 +19,6 @@ require (
 	github.com/cloudwego/netpoll v0.5.0 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/golang/protobuf v1.5.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/henrylee2cn/ameda v1.4.10 // indirect
 	github.com/henrylee2cn/goutil v0.0.0-20210127050712-89660552f6f8 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
