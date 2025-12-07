@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hertz-contrib/cors v0.1.0
 	github.com/hertz-contrib/requestid v1.1.0
+	github.com/sashabaranov/go-openai v1.41.2
 	golang.org/x/crypto v0.45.0
 )
 
