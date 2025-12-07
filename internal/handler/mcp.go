@@ -8,6 +8,7 @@ import (
 
 	"example.com/agent-server/internal/middleware"
 	"example.com/agent-server/internal/store"
+	"example.com/agent-server/pkg/response"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/google/uuid"
 )
@@ -78,7 +79,7 @@ func (h *Handler) ListMCPServers(c context.Context, ctx *app.RequestContext) {
 		})
 	}
 
-	ctx.JSON(http.StatusOK, map[string]interface{}{"data": res})
+	response.Success(ctx, res)
 }
 
 // RegisterMCPServer 注册新的 Server
@@ -86,20 +87,18 @@ func (h *Handler) RegisterMCPServer(c context.Context, ctx *app.RequestContext) 
 	// 权限检查...
 	_, ok := middleware.GetUserID(ctx)
 	if !ok {
-		ctx.JSON(http.StatusUnauthorized, nil)
+		response.Unauthorized(ctx, "Unauthorized")
 		return
 	}
 
 	var req RegisterMCPServerReq
 	if err := ctx.BindAndValidate(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		response.BadRequest(ctx, err.Error())
 		return
 	}
 	//用户不得创建本地的mcpserver,只能采用远程连接的方式
 	if req.TransportType == "stdio" {
-		ctx.JSON(http.StatusForbidden, map[string]string{
-			"error": "Security Alert: Users can only register SSE (Remote) servers, not local stdio processes.",
-		})
+		response.Error(ctx, http.StatusForbidden, 40300, "Security Alert: Users can only register SSE (Remote) servers, not local stdio processes.")
 		return
 	}
 
@@ -115,7 +114,7 @@ func (h *Handler) RegisterMCPServer(c context.Context, ctx *app.RequestContext) 
 
 	createdServer := h.Store.CreateMCPServer(server)
 
-	ctx.JSON(http.StatusCreated, map[string]interface{}{
+	response.Created(ctx, map[string]interface{}{
 		"id": createdServer.ID,
 		"data": &MCPServerResp{
 			MCPServer: createdServer,
@@ -143,7 +142,7 @@ func (h *Handler) ListMCPTools(c context.Context, ctx *app.RequestContext) {
 		})
 	}
 
-	ctx.JSON(http.StatusOK, map[string]interface{}{"data": res})
+	response.Success(ctx, res)
 }
 
 // SyncMCPTools [核心] 同步工具
@@ -153,7 +152,7 @@ func (h *Handler) SyncMCPTools(c context.Context, ctx *app.RequestContext) {
 	serverID := ctx.Param("id")
 	server := h.Store.GetMCPServer(serverID)
 	if server == nil {
-		ctx.JSON(http.StatusNotFound, map[string]string{"error": "MCPServer not found"})
+		response.Error(ctx, http.StatusNotFound, 40400, "MCPServer not found")
 		return
 	}
 
@@ -171,7 +170,7 @@ func (h *Handler) SyncMCPTools(c context.Context, ctx *app.RequestContext) {
 		count++
 	}
 
-	ctx.JSON(http.StatusOK, map[string]interface{}{
+	response.Success(ctx, map[string]interface{}{
 		"message":     "Sync successful",
 		"server_name": server.Name,
 		"sync_count":  count,

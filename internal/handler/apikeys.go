@@ -11,6 +11,7 @@ import (
 
 	"example.com/agent-server/internal/middleware"
 	"example.com/agent-server/internal/store"
+	"example.com/agent-server/pkg/response"
 	"github.com/cloudwego/hertz/pkg/app"
 )
 
@@ -48,7 +49,7 @@ type APIKeyResp struct {
 func (h *Handler) ListAPIKeys(c context.Context, ctx *app.RequestContext) {
 	userID, ok := middleware.GetUserID(ctx)
 	if !ok {
-		ctx.JSON(http.StatusUnauthorized, nil)
+		response.Unauthorized(ctx, "Unauthorized")
 		return
 	}
 
@@ -71,29 +72,27 @@ func (h *Handler) ListAPIKeys(c context.Context, ctx *app.RequestContext) {
 		})
 	}
 
-	ctx.JSON(http.StatusOK, map[string]interface{}{
-		"data": res,
-	})
+	response.Success(ctx, res)
 }
 
 // CreateAPIKey 创建新的 API Key
 func (h *Handler) CreateAPIKey(c context.Context, ctx *app.RequestContext) {
 	userID, ok := middleware.GetUserID(ctx)
 	if !ok {
-		ctx.JSON(http.StatusUnauthorized, nil)
+		response.Unauthorized(ctx, "Unauthorized")
 		return
 	}
 
 	var req CreateAPIKeyReq
 	if err := ctx.BindAndValidate(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		response.BadRequest(ctx, err.Error())
 		return
 	}
 
 	// 1. 生成随机 Key (sk-nx-...)
 	rawKey, err := generateRandomKey()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate key"})
+		response.ServerError(ctx, err)
 		return
 	}
 
@@ -118,11 +117,11 @@ func (h *Handler) CreateAPIKey(c context.Context, ctx *app.RequestContext) {
 	createdKey := h.Store.CreateAPIKey(apiKey)
 
 	// 5. 返回 (注意：这里必须返回 rawKey，这是用户唯一一次看到它的机会)
-	ctx.JSON(http.StatusCreated, CreateAPIKeyResp{
+	response.Created(ctx, CreateAPIKeyResp{
 		ID:        createdKey.ID,
 		Name:      createdKey.Name,
 		Prefix:    createdKey.Prefix,
-		Key:       rawKey, // <--- 重要！
+		Key:       rawKey,
 		CreatedAt: createdKey.CreatedAt.Format(time.RFC3339),
 	})
 }
@@ -132,27 +131,27 @@ func (h *Handler) RevokeAPIKey(c context.Context, ctx *app.RequestContext) {
 	id := ctx.Param("id")
 	userID, ok := middleware.GetUserID(ctx)
 	if !ok {
-		ctx.JSON(http.StatusUnauthorized, nil)
+		response.Unauthorized(ctx, "Unauthorized")
 		return
 	}
 
 	// 1. 检查 Key 是否存在且属于当前用户
 	targetKey := h.Store.GetAPIKey(id)
 	if targetKey == nil {
-		ctx.JSON(http.StatusNotFound, map[string]string{"error": "API Key not found"})
+		response.Error(ctx, http.StatusNotFound, 40400, "API Key not found")
 		return
 	}
 
 	if targetKey.UserID != userID {
-		ctx.JSON(http.StatusForbidden, map[string]string{"error": "You do not own this key"})
+		response.Error(ctx, http.StatusForbidden, 40300, "You do not own this key")
 		return
 	}
 
 	// 2. 删除
 	if h.Store.DeleteAPIKey(id) {
-		ctx.JSON(http.StatusOK, map[string]string{"message": "API Key revoked"})
+		response.Success(ctx, map[string]string{"message": "API Key revoked"})
 	} else {
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to revoke key"})
+		response.Error(ctx, http.StatusInternalServerError, 50000, "Failed to revoke key")
 	}
 }
 

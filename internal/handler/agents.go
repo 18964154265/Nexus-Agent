@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"example.com/agent-server/internal/middleware"
 	"example.com/agent-server/internal/store"
+	"example.com/agent-server/pkg/response"
 	"github.com/cloudwego/hertz/pkg/app"
 )
 
@@ -58,9 +60,7 @@ func (h *Handler) ListAgents(c context.Context, ctx *app.RequestContext) {
 		respList = append(respList, toAgentResp(a))
 	}
 
-	ctx.JSON(http.StatusOK, map[string]interface{}{
-		"data": respList,
-	})
+	response.Success(ctx, respList)
 }
 
 // ==========================================
@@ -69,15 +69,15 @@ func (h *Handler) ListAgents(c context.Context, ctx *app.RequestContext) {
 
 // CreateAgent 创建一个新的自定义 Agent
 func (h *Handler) CreateAgent(c context.Context, ctx *app.RequestContext) {
-	userID, ok := GetUserIDFromCtx(ctx)
+	userID, ok := middleware.GetUserID(ctx)
 	if !ok {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		response.Unauthorized(ctx, "Unauthorized")
 		return
 	}
 
 	var req AgentReq
 	if err := ctx.BindAndValidate(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		response.BadRequest(ctx, err.Error())
 		return
 	}
 
@@ -103,10 +103,7 @@ func (h *Handler) CreateAgent(c context.Context, ctx *app.RequestContext) {
 
 	createdAgent := h.Store.CreateAgent(agent)
 
-	ctx.JSON(http.StatusCreated, map[string]interface{}{
-		"id":   createdAgent.ID,
-		"data": toAgentResp(createdAgent),
-	})
+	response.Created(ctx, createdAgent)
 }
 
 // GetAgent 获取详情 (详情页可能需要 SystemPrompt，可以定义另一个 DetailResp)
@@ -114,42 +111,40 @@ func (h *Handler) GetAgent(c context.Context, ctx *app.RequestContext) {
 	id := ctx.Param("id")
 	agent := h.Store.GetAgent(id)
 	if agent == nil {
-		ctx.JSON(http.StatusNotFound, map[string]string{"error": "Agent not found"})
+		response.Error(ctx, http.StatusNotFound, 40400, "Agent not found")
 		return
 	}
 
 	// 这里为了简单，我们还是直接返回 agent 或者构造一个包含 prompt 的 Resp
 	// 假设详情页允许看 prompt
-	ctx.JSON(http.StatusOK, map[string]interface{}{
-		"data": agent, // 详情页直接透传数据库模型通常是可以接受的
-	})
+	response.Success(ctx, agent)
 }
 
 // UpdateAgent 更新 Agent
 func (h *Handler) UpdateAgent(c context.Context, ctx *app.RequestContext) {
 	id := ctx.Param("id")
-	userID, ok := GetUserIDFromCtx(ctx)
+	userID, ok := middleware.GetUserID(ctx)
 	if !ok {
-		ctx.JSON(http.StatusUnauthorized, nil)
+		response.Unauthorized(ctx, "Unauthorized")
 		return
 	}
 
 	// 1. 检查权限
 	existing := h.Store.GetAgent(id)
 	if existing == nil {
-		ctx.JSON(http.StatusNotFound, nil)
+		response.Error(ctx, http.StatusNotFound, 40400, "Agent not found")
 		return
 	}
 	// 只有拥有者或系统管理员(这里简化)能修改
 	if existing.Type != "system" && existing.OwnerUserID != userID {
-		ctx.JSON(http.StatusForbidden, map[string]string{"error": "No permission"})
+		response.Error(ctx, http.StatusForbidden, 40300, "No permission")
 		return
 	}
 
 	// 2. 绑定参数
 	var req AgentReq
 	if err := ctx.BindAndValidate(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		response.BadRequest(ctx, err.Error())
 		return
 	}
 
@@ -165,39 +160,39 @@ func (h *Handler) UpdateAgent(c context.Context, ctx *app.RequestContext) {
 	})
 
 	if !updated {
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update"})
+		response.Error(ctx, http.StatusInternalServerError, 50000, "Failed to update")
 		return
 	}
 
-	ctx.JSON(http.StatusOK, map[string]string{"message": "Agent updated"})
+	response.Success(ctx, map[string]string{"message": "Agent updated"})
 }
 
 // DeleteAgent 删除 Agent
 func (h *Handler) DeleteAgent(c context.Context, ctx *app.RequestContext) {
 	id := ctx.Param("id")
-	userID, ok := GetUserIDFromCtx(ctx)
+	userID, ok := middleware.GetUserID(ctx)
 	if !ok {
-		ctx.JSON(http.StatusUnauthorized, nil)
+		response.Unauthorized(ctx, "Unauthorized")
 		return
 	}
 
 	existing := h.Store.GetAgent(id)
 	if existing == nil {
-		ctx.JSON(http.StatusNotFound, nil)
+		response.Error(ctx, http.StatusNotFound, 40400, "Agent not found")
 		return
 	}
 	if existing.Type == "system" {
-		ctx.JSON(http.StatusForbidden, map[string]string{"error": "Cannot delete system agent"})
+		response.Error(ctx, http.StatusForbidden, 40300, "Cannot delete system agent")
 		return
 	}
 	if existing.OwnerUserID != userID {
-		ctx.JSON(http.StatusForbidden, nil)
+		response.Error(ctx, http.StatusForbidden, 40300, "No permission")
 		return
 	}
 
 	if h.Store.DeleteAgent(id) {
-		ctx.JSON(http.StatusOK, map[string]string{"message": "Deleted"})
+		response.Success(ctx, map[string]string{"message": "Deleted"})
 	} else {
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete"})
+		response.Error(ctx, http.StatusInternalServerError, 50000, "Failed to delete")
 	}
 }

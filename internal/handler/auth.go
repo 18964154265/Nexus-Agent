@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"time"
 
+	"example.com/agent-server/internal/middleware"
 	"example.com/agent-server/internal/store"
+	"example.com/agent-server/pkg/response"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -44,20 +46,20 @@ type AuthResponse struct {
 func (h *Handler) Register(c context.Context, ctx *app.RequestContext) {
 	var req RegisterReq
 	if err := ctx.BindAndValidate(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		response.BadRequest(ctx, err.Error())
 		return
 	}
 
 	// 1. 检查邮箱是否已存在
 	if u := h.Store.FindUserByEmail(req.Email); u != nil {
-		ctx.JSON(http.StatusConflict, map[string]string{"error": "Email already exists"})
+		response.Error(ctx, http.StatusConflict, 40900, "Email already exists")
 		return
 	}
 
 	// 2. 密码加密 (Hash)
 	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to hash password"})
+		response.ServerError(ctx, err)
 		return
 	}
 
@@ -71,13 +73,13 @@ func (h *Handler) Register(c context.Context, ctx *app.RequestContext) {
 
 	createdUser, ok := h.Store.CreateUser(user)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create user"})
+		response.Error(ctx, http.StatusInternalServerError, 50000, "Failed to create user")
 		return
 	}
 
 	// 注册成功，返回用户信息（为了安全，通常不直接返回 Token，让用户去登录）
 	// 这里为了简化流程，可以返回 success
-	ctx.JSON(http.StatusCreated, map[string]interface{}{
+	response.Created(ctx, map[string]interface{}{
 		"message": "User registered successfully",
 		"user_id": createdUser.ID,
 	})
@@ -87,28 +89,28 @@ func (h *Handler) Register(c context.Context, ctx *app.RequestContext) {
 func (h *Handler) Login(c context.Context, ctx *app.RequestContext) {
 	var req LoginReq
 	if err := ctx.BindAndValidate(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		response.BadRequest(ctx, err.Error())
 		return
 	}
 
 	// 1. 查找用户
 	user := h.Store.FindUserByEmail(req.Email)
 	if user == nil {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid email or password"})
+		response.Unauthorized(ctx, "Invalid email or password")
 		return
 	}
 
 	// 2. 校验密码
 	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password))
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid email or password"})
+		response.Unauthorized(ctx, "Invalid email or password")
 		return
 	}
 
 	// 3. 生成 Tokens
 	accessToken, err := h.generateAccessToken(user.ID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
+		response.ServerError(ctx, err)
 		return
 	}
 
@@ -124,7 +126,7 @@ func (h *Handler) Login(c context.Context, ctx *app.RequestContext) {
 	})
 
 	// 5. 返回
-	ctx.JSON(http.StatusOK, AuthResponse{
+	response.Success(ctx, AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		User:         user,
@@ -135,31 +137,31 @@ func (h *Handler) Login(c context.Context, ctx *app.RequestContext) {
 func (h *Handler) Refresh(c context.Context, ctx *app.RequestContext) {
 	var req RefreshReq
 	if err := ctx.BindAndValidate(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		response.BadRequest(ctx, err.Error())
 		return
 	}
 
 	// 1. 查库校验 Refresh Token
 	rt := h.Store.GetRefresh(req.RefreshToken)
 	if rt == nil || rt.Revoked {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid or revoked refresh token"})
+		response.Unauthorized(ctx, "Invalid or revoked refresh token")
 		return
 	}
 
 	if time.Now().After(rt.Expire) {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "Refresh token expired"})
+		response.Unauthorized(ctx, "Refresh token expired")
 		return
 	}
 
 	// 2. 签发新的 Access Token
 	newAccessToken, err := h.generateAccessToken(rt.UserID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
+		response.ServerError(ctx, err)
 		return
 	}
 
 	// 3. 返回新 Token (Refresh Token 可以保持不变，或者也轮转，这里简化为不变)
-	ctx.JSON(http.StatusOK, map[string]string{
+	response.Success(ctx, map[string]string{
 		"access_token": newAccessToken,
 	})
 }
@@ -173,22 +175,22 @@ func (h *Handler) Logout(c context.Context, ctx *app.RequestContext) {
 		h.Store.RevokeRefresh(req.RefreshToken)
 	}
 
-	ctx.JSON(http.StatusOK, map[string]string{"message": "Logged out"})
+	response.Success(ctx, map[string]string{"message": "Logged out"})
 }
 
 // Me 获取当前用户信息
 // internal/handler/auth.go
 
 func (h *Handler) Me(c context.Context, ctx *app.RequestContext) {
-	userID, exists := GetUserIDFromCtx(ctx)
+	userID, exists := middleware.GetUserID(ctx)
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		response.Unauthorized(ctx, "Unauthorized")
 		return
 	}
 
 	user := h.Store.FindUserByID(userID)
 	if user == nil {
-		ctx.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
+		response.Error(ctx, http.StatusNotFound, 40400, "User not found")
 		return
 	}
 
@@ -202,7 +204,7 @@ func (h *Handler) Me(c context.Context, ctx *app.RequestContext) {
 		// "updated_at": user.UpdatedAt, // 可选
 	}
 
-	ctx.JSON(http.StatusOK, safeUser)
+	response.Success(ctx, safeUser)
 }
 
 // ==========================================

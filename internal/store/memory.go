@@ -371,6 +371,18 @@ func (m *MemoryStore) ListKnowledgeBasesByUser(userID string) []*KnowledgeBase {
 	return res
 }
 
+// UpdateKnowledgeBase 更新知识库元数据
+func (m *MemoryStore) UpdateKnowledgeBase(id string, f func(*KnowledgeBase)) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if kb, ok := m.kbs[id]; ok {
+		f(kb)
+		kb.UpdatedAt = time.Now()
+		return true
+	}
+	return false
+}
+
 func (m *MemoryStore) CreateMCPServer(s *MCPServer) *MCPServer {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -484,6 +496,22 @@ func (m *MemoryStore) ListChatSessionsByUser(userID string) []*ChatSession {
 	return res
 }
 
+func (m *MemoryStore) GetChatSession(id string) *ChatSession {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.sessions[id]
+}
+
+func (m *MemoryStore) DeleteChatSession(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.sessions[id]; ok {
+		delete(m.sessions, id)
+		return true
+	}
+	return false
+}
+
 func (m *MemoryStore) CreateRun(r *Run) (*Run, error) {
 	//添加外键检查
 
@@ -526,6 +554,15 @@ func (m *MemoryStore) ListRunsBySession(sessionID string) []*Run {
 		}
 	}
 	return res
+}
+
+func (m *MemoryStore) GetRun(runID string) *Run {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if _, ok := m.runs[runID]; !ok {
+		return nil
+	}
+	return m.runs[runID]
 }
 
 func (m *MemoryStore) CreateRunStep(rs *RunStep) *RunStep {
