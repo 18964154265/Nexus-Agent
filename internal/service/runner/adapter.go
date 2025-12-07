@@ -21,8 +21,8 @@ func DBMessageToOpenAI(msgs []*store.ChatMessage) []openai.ChatCompletionMessage
 			openaiMsg.Content = string(b)
 		}
 		if m.Role == openai.ChatMessageRoleAssistant {
-			continue
-			//在store.ChatMessage中存toool_calls的原始json
+
+			//在store.ChatMessage中存tool_calls的原始json
 			//取出来时要能反序列化
 		}
 		if m.Role == openai.ChatMessageRoleTool {

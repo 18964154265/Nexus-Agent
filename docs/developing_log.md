@@ -47,3 +47,9 @@ content: "检查完了，代码里缺少 import os..."
 tool_calls: NULL
 作用： 这就是用户在界面上看到的最终气泡。
 
+12.7:
+完成所有handlers,但mcp,sessions因为还没有实际接入llm,因此留下了一些mock函数，后续补全
+todo: 
+    openai api文档学习 
+    engine.go中的工具调用逻辑完成
+to check:所有增删改查的外键检查，级联等
