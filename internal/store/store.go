@@ -34,6 +34,7 @@ type Store interface {
 
 	CreateMCPTool(t *MCPTool) *MCPTool
 	ListMCPToolsByServer(serverID string) []*MCPTool
+	ListMCPToolsByAgent(agentID string) []*MCPTool
 
 	CreateChatSession(s *ChatSession) *ChatSession
 	ListChatSessionsByUser(userID string) []*ChatSession

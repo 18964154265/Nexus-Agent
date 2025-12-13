@@ -426,6 +426,18 @@ func (m *MemoryStore) ListAllMCPServers() []*MCPServer {
 	return res
 }
 
+func (m *MemoryStore) ListGlobalMCPServers() []*MCPServer {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	res := []*MCPServer{}
+	for _, s := range m.mcpServers {
+		if s.IsGlobal {
+			res = append(res, s)
+		}
+	}
+	return res
+}
+
 func (m *MemoryStore) FindMCPServerByName(agentID string, name string) *MCPServer {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -469,6 +481,28 @@ func (m *MemoryStore) ListMCPToolsByServer(serverID string) []*MCPTool {
 		if t.ServerID == serverID {
 			res = append(res, t)
 		}
+	}
+	return res
+}
+
+func (m *MemoryStore) ListMCPToolsByAgent(agentID string) []*MCPTool {
+	//必须是显式绑定的server，globalserver不能直接加上来
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	res := []*MCPTool{}
+	for _, s := range m.ListMCPServersByAgent(agentID) {
+		res = append(res, m.ListMCPToolsByServer(s.ID)...)
+	}
+	return res
+}
+
+func (m *MemoryStore) ListGlobalMCPTools() []*MCPTool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	globalMCPServers := m.ListGlobalMCPServers()
+	res := []*MCPTool{}
+	for _, s := range globalMCPServers {
+		res = append(res, m.ListMCPToolsByServer(s.ID)...)
 	}
 	return res
 }

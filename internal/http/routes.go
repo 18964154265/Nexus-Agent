@@ -56,15 +56,15 @@ func RegisterRoutes(h *server.Hertz, hdl *handler.Handler, secret string) {
 	g.DELETE("/agents/:id", hdl.DeleteAgent)
 
 	// --- MCP Ecosystem ---
-	// g.GET("/mcp/servers", hdl.ListMCPServers)
-	// g.POST("/mcp/servers", hdl.RegisterMCPServer)
-	// g.POST("/mcp/servers/:id/sync", hdl.SyncMCPTools)
-	// g.GET("/mcp/servers/:id/tools", hdl.ListMCPTools)
+	g.GET("/mcp/servers", hdl.ListMCPServers)
+	g.POST("/mcp/servers", hdl.RegisterMCPServer)
+	g.POST("/mcp/servers/:id/sync", hdl.SyncMCPTools)
+	g.GET("/mcp/servers/:id/tools", hdl.ListMCPTools)
 
 	// --- Knowledge Base ---
-	// g.GET("/knowledge", hdl.ListKnowledgeBases)
-	// g.POST("/knowledge", hdl.CreateKnowledgeBase)
-	// g.POST("/knowledge/:id/documents", hdl.UploadDocument)
+	g.GET("/knowledge", hdl.ListKnowledgeBases)
+	g.POST("/knowledge", hdl.CreateKnowledgeBase)
+	g.POST("/knowledge/:id/documents", hdl.UploadDocument)
 
 	// --- Chat & Runtime ---
 	// g.GET("/sessions", hdl.ListChatSessions)

@@ -7,6 +7,7 @@ import (
 	"example.com/agent-server/internal/handler"
 	myhttp "example.com/agent-server/internal/http"
 	"example.com/agent-server/internal/middleware"
+	"example.com/agent-server/internal/service"
 	"example.com/agent-server/internal/store"
 )
 
@@ -20,7 +21,9 @@ func main() {
 
 	// 3. 初始化 Handler (注入 db)
 	// 注意：jwt-secret 应该从环境变量读取，这里为了演示写死
-	h := handler.New(db, "your-secure-jwt-secret-key")
+	svc := service.NewService(db, nil)
+
+	h := handler.New(db, "your-secure-jwt-secret-key", svc)
 
 	// 4. 初始化 Hertz Server
 	srv := server.Default()

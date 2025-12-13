@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -27,7 +28,6 @@ func NewEngine(s *store.MemoryStore) *AgentEngine {
 }
 
 // ExecuteRun 核心方法：执行 Agent 的思考循环
-// 这里替换掉之前 handler 里的 simulateAgentExecution
 func (e *AgentEngine) ExecuteRun(ctx context.Context, runID string) (string, error) {
 
 	run := e.Store.GetRun(runID) // 根据 runID 获取 run
@@ -38,68 +38,62 @@ func (e *AgentEngine) ExecuteRun(ctx context.Context, runID string) (string, err
 	if session == nil {
 		return "", fmt.Errorf("session not found")
 	}
-	dbMsgs := e.Store.ListChatMessagesBySession(run.SessionID)
-	history := DBMessageToOpenAI(dbMsgs)
-
-	resp, err := e.LLMClient.ChatCompletion(ctx, llm.ChatRequest{
-		SystemPrompt: "you are a devops assistant",
-		History:      history,
-		Tools:        nil, //先置空
-	})
-	if err != nil {
-		return "", err
+	agent := e.Store.GetAgent(run.AgentID)
+	if agent == nil {
+		return "", fmt.Errorf("agent not found")
 	}
 
-	if len(resp.ToolCalls) > 0 {
-		// =======================================================
-		// 🚀 The ReAct Loop (核心循环)
-		// =======================================================
-		// 为了防止死循环，设置最大步数，比如 10 步
-		maxSteps := 10
+	maxSteps := 5
 
-		for i := 0; i < maxSteps; i++ {
-			// Step A: 思考 (Call LLM)
-			// llmResp, err := e.LLMClient.ChatCompletion(prompt)
-			// ---------------------------------------------------
-			// 【模拟 LLM 返回】: 假设第一次返回 ToolCall，第二次返回文本
-			var llmDecision string
-			if i == 0 {
-				llmDecision = "TOOL_CALL: git_status" // 模拟想调工具
-			} else {
-				llmDecision = "FINAL_ANSWER: 仓库很干净" // 模拟最终回复
+	for i := 0; i < maxSteps; i++ {
+		history := e.Store.ListChatMessagesBySession(session.ID)
+		tools := e.Store.ListMCPToolsByAgent(agent.ID)
+
+		req := llm.ChatRequest{
+			SystemPrompt: agent.SystemPrompt,
+			History:      history,
+			Tools:        tools,
+		}
+		fmt.Printf("[Agent] Step %d: Thinking...\n", i+1)
+		resp, err := e.LLMClient.ChatCompletion(ctx, &req)
+		if err != nil {
+			return "", fmt.Errorf("step %d: %v", i+1, err)
+		}
+
+		if len(resp.ToolCalls) > 0 {
+			// 处理工具调用
+			fmt.Printf("[Agent] Step %d: Tool Call(s) detected: %v\n", i+1, resp.ToolCalls)
+			toolCallsJson, _ := json.Marshal(resp.ToolCalls)
+			e.Store.CreateChatMessage(&store.ChatMessage{
+				SessionID:  session.ID,
+				RunID:      run.ID,
+				Role:       "assistant",
+				Content:    map[string]interface{}{"text": resp.Content, "tool_calls": string(toolCallsJson)},
+				ToolCallID: resp.ToolCalls[0].ID, //这里只需要存一个ID吗？
+				CreatedAt:  time.Now(),
+			})
+
+			for _, call := range resp.ToolCalls {
+				fmt.Printf("[Agent]: Tool Call %s: %s\n", call.ID, call.Function.Name)
+				e.saveStep(run, "tool_start", call.Function.Name, nil) //为什么是nil
+				output, err := e.executeToolCall(ctx, call)
+				if err != nil {
+					output = fmt.Sprintf("Tool error %s: %v", call.ID, err)
+				}
+				e.saveStep(run, "tool_end", call.Function.Name, map[string]interface{}{
+					"output": output,
+				})
+				e.saveToolOutput(run, call.ID, output)
 			}
-			// ---------------------------------------------------
+			continue
 
-			// Step B: 处理决策
-			if isFinalAnswer(llmDecision) {
-				// 1. 记录 Assistant 消息
-				e.saveMessage(run, "assistant", "仓库很干净", "")
-				return "仓库很干净", nil
-			}
-
-			if isToolCall(llmDecision) {
-				// 1. 记录 "我要调工具" 的想法
-				e.saveMessage(run, "assistant", "正在检查状态...", "call_id_123")
-
-				// 2. 记录 RunStep (Tool Start)
-				e.saveStep(run, "tool_start", "git_status", nil)
-
-				// Step C: 行动 (Execute Tool)
-				// toolResult := e.executeTool("git_status", args)
-				toolResult := "On branch main, nothing to commit" // 模拟结果
-
-				// 3. 记录 RunStep (Tool End)
-				e.saveStep(run, "tool_end", "git_status", map[string]interface{}{"output": toolResult})
-
-				// 4. 记录 Tool Message (观察)
-				// 这一步非常重要！把结果喂回给 LLM
-				e.saveMessage(run, "tool", toolResult, "call_id_123")
-
-				// Continue Loop -> LLM 看到结果后，进入下一次迭代
-			}
+		} else {
+			// 处理普通回复
+			fmt.Printf("[Agent] Step %d: Received response: %s\n", i+1, resp.Content)
+			e.saveMessage(run, "assistant", resp.Content, "")
+			return resp.Content, nil
 		}
 	}
-
 	return "", fmt.Errorf("max steps reached")
 }
 

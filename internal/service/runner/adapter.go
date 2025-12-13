@@ -32,3 +32,21 @@ func DBMessageToOpenAI(msgs []*store.ChatMessage) []openai.ChatCompletionMessage
 	}
 	return result
 }
+
+func DBToolsToOpenAI(dbTools []*store.MCPTool) []openai.Tool {
+	result := make([]openai.Tool, 0, len(dbTools))
+	for _, t := range dbTools {
+		schemaBytes, _ := json.Marshal(t.InputSchema)
+		tool := openai.Tool{
+			Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  json.RawMessage(schemaBytes),
+			},
+		}
+		result = append(result, tool)
+	}
+
+	return result
+}

@@ -10,7 +10,6 @@ import (
 	"example.com/agent-server/internal/store"
 	"example.com/agent-server/pkg/response"
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/google/uuid"
 )
 
 // ==========================================
@@ -148,141 +147,25 @@ func (h *Handler) ListMCPTools(c context.Context, ctx *app.RequestContext) {
 // SyncMCPTools [核心] 同步工具
 // 真实场景：连接 MCP 进程 -> 发送 list_tools -> 更新 DB
 // 当前场景：模拟数据，方便前端开发
+// ... 前面的 List 和 Register 保持不变 ...
+
+// SyncMCPTools [核心] 同步工具
 func (h *Handler) SyncMCPTools(c context.Context, ctx *app.RequestContext) {
 	serverID := ctx.Param("id")
-	server := h.Store.GetMCPServer(serverID)
-	if server == nil {
-		response.Error(ctx, http.StatusNotFound, 40400, "MCPServer not found")
+
+	// 调用 Service 层逻辑
+	count, err := h.Svc.MCP.SyncTools(c, serverID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			response.Error(ctx, http.StatusNotFound, 40400, err.Error())
+		} else {
+			response.Error(ctx, http.StatusInternalServerError, 50000, err.Error())
+		}
 		return
 	}
 
-	// 2. 【模拟】根据 Server 名字自动生成工具
-	// 真实场景：调用mcp_client.Connect(server.Config).ListTools()
-	newTools := mockToolsForServer(server.ID, server.Name) // 这里的 name 实际应该取 server.Name
-
-	// 3. 存入数据库
-	count := 0
-	for _, t := range newTools {
-		t.ID = uuid.New().String()
-		t.CreatedAt = time.Now()
-		t.UpdatedAt = time.Now()
-		h.Store.CreateMCPTool(t)
-		count++
-	}
-
 	response.Success(ctx, map[string]interface{}{
-		"message":     "Sync successful",
-		"server_name": server.Name,
-		"sync_count":  count,
+		"message":    "Sync successful",
+		"sync_count": count,
 	})
-}
-
-// ==========================================
-// Mock Helper (模拟 MCP 协议返回)
-// ==========================================
-
-func mockToolsForServer(serverID, serverName string) []*store.MCPTool {
-	tools := []*store.MCPTool{}
-	name := strings.ToLower(serverName)
-	//1.模拟Git Server
-	if strings.Contains(name, "git") {
-		tools = append(tools, &store.MCPTool{
-			ServerID:    serverID,
-			Name:        "git_status",
-			Description: "显示工作目录状态。",
-			InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{
-				"repo_path": map[string]string{"type": "string", "description": "仓库路径,默认当前目录"},
-			},
-			},
-		})
-		tools = append(tools, &store.MCPTool{
-			ServerID:    serverID,
-			Name:        "git_diff",
-			Description: "显示commit,commit和工作树之间的修改。",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"target": map[string]string{"type": "string", "description": "目标commit,默认HEAD"},
-				},
-			},
-		})
-		tools = append(tools, &store.MCPTool{
-			ServerID:    serverID,
-			Name:        "git_commit",
-			Description: "提交代码变更。",
-			InputSchema: map[string]interface{}{
-				"type":     "object",
-				"required": []string{"message"},
-				"properties": map[string]interface{}{
-					"message": map[string]string{"type": "string", "description": "提交信息"},
-					"add_all": map[string]string{"type": "boolean", "description": "是否添加所有变更文件"},
-				},
-			},
-		})
-		tools = append(tools, &store.MCPTool{
-			ServerID:    serverID,
-			Name:        "git_log",
-			Description: "显示提交日志。",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"max_count": map[string]string{"type": "integer", "description": "最大提交数,默认10"},
-				},
-			},
-		})
-	}
-	//2.模拟Filesystem Server
-	if strings.Contains(name, "filesystem") || strings.Contains(name, "fs") {
-		tools = append(tools, &store.MCPTool{
-			ServerID:    serverID,
-			Name:        "list_directory",
-			Description: "列出目录下的文件。",
-			InputSchema: map[string]interface{}{
-				"type":     "object",
-				"required": []string{"path"},
-				"properties": map[string]interface{}{
-					"path": map[string]string{"type": "string", "description": "目录路径"},
-				},
-			},
-		})
-		tools = append(tools, &store.MCPTool{
-			ServerID:    serverID,
-			Name:        "read_file",
-			Description: "读取文件内容。",
-			InputSchema: map[string]interface{}{
-				"type":     "object",
-				"required": []string{"path"},
-				"properties": map[string]interface{}{
-					"path": map[string]string{"type": "string", "description": "文件路径"},
-				},
-			},
-		})
-		tools = append(tools, &store.MCPTool{
-			ServerID:    serverID,
-			Name:        "write_file",
-			Description: "写入文件内容。",
-			InputSchema: map[string]interface{}{
-				"type":     "object",
-				"required": []string{"path", "content"},
-				"properties": map[string]interface{}{
-					"path":    map[string]string{"type": "string", "description": "文件路径"},
-					"content": map[string]string{"type": "string", "description": "文件内容"},
-				},
-			},
-		})
-		tools = append(tools, &store.MCPTool{
-			ServerID:    serverID,
-			Name:        "search_files",
-			Description: "搜索文件。",
-			InputSchema: map[string]interface{}{
-				"type":     "object",
-				"required": []string{"path", "pattern"},
-				"properties": map[string]interface{}{
-					"path":    map[string]string{"type": "string", "description": "文件路径"},
-					"pattern": map[string]string{"type": "string", "description": "正则表达式"},
-				},
-			},
-		})
-	}
-	return tools
 }
