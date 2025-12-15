@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"example.com/agent-server/internal/service/llm"
@@ -17,14 +19,27 @@ type AgentEngine struct {
 }
 
 func NewEngine(s *store.MemoryStore) *AgentEngine {
-	cfg := llm.LLMConfig{
-		ApiKey:      "apikey", //后续填入真实
-		BaseURL:     "https://api.siliconflow.cn/v1",
-		ModelName:   "Qwen2.5-VL-32B-Instruct",
-		Temperature: 0.5,
+	apiKey := os.Getenv("LLM_API_KEY")
+	baseURL := os.Getenv("LLM_BASE_URL")
+	model := os.Getenv("LLM_MODEL")
+	tempStr := os.Getenv("LLM_TEMPERATURE")
+	if apiKey == "" {
+		apiKey = "apikey"
 	}
+	if baseURL == "" {
+		baseURL = "https://api.siliconflow.com/v1"
+	}
+	if model == "" {
+		model = "Qwen/QwQ-32B"
+	}
+	var temperature float32 = 0.5
+	if tempStr != "" {
+		if v, err := strconv.ParseFloat(tempStr, 32); err == nil {
+			temperature = float32(v)
+		}
+	}
+	cfg := llm.LLMConfig{ApiKey: apiKey, BaseURL: baseURL, ModelName: model, Temperature: temperature}
 	return &AgentEngine{Store: s, LLMClient: llm.NewClient(cfg)}
-
 }
 
 // ExecuteRun 核心方法：执行 Agent 的思考循环
@@ -65,12 +80,11 @@ func (e *AgentEngine) ExecuteRun(ctx context.Context, runID string) (string, err
 			fmt.Printf("[Agent] Step %d: Tool Call(s) detected: %v\n", i+1, resp.ToolCalls)
 			toolCallsJson, _ := json.Marshal(resp.ToolCalls)
 			e.Store.CreateChatMessage(&store.ChatMessage{
-				SessionID:  session.ID,
-				RunID:      run.ID,
-				Role:       "assistant",
-				Content:    map[string]interface{}{"text": resp.Content, "tool_calls": string(toolCallsJson)},
-				ToolCallID: resp.ToolCalls[0].ID, //这里只需要存一个ID吗？
-				CreatedAt:  time.Now(),
+				SessionID: session.ID,
+				RunID:     run.ID,
+				Role:      "assistant",
+				Content:   map[string]interface{}{"text": resp.Content, "tool_calls": string(toolCallsJson)},
+				CreatedAt: time.Now(),
 			})
 
 			for _, call := range resp.ToolCalls {
