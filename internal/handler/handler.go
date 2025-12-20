@@ -7,14 +7,14 @@ import (
 )
 
 type Handler struct {
-	Store     *store.MemoryStore
+	Store     store.Store
 	JWTSecret []byte
 	Engine    *runner.AgentEngine
 	Svc       *service.Service
 }
 
 // 工厂函数：初始化 Handler
-func New(s *store.MemoryStore, secret string, svc *service.Service) *Handler {
+func New(s store.Store, secret string, svc *service.Service) *Handler {
 	return &Handler{
 		Store:     s,
 		JWTSecret: []byte(secret),

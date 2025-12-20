@@ -28,24 +28,36 @@ type Store interface {
 	CreateKnowledgeBase(kb *KnowledgeBase) *KnowledgeBase
 	GetKnowledgeBase(id string) *KnowledgeBase
 	ListKnowledgeBasesByUser(userID string) []*KnowledgeBase
+	UpdateKnowledgeBase(id string, f func(*KnowledgeBase)) bool
 
 	CreateMCPServer(s *MCPServer) *MCPServer
 	ListMCPServersByAgent(agentID string) []*MCPServer
+	ListAllMCPServers() []*MCPServer
+	ListGlobalMCPServers() []*MCPServer
+	GetMCPServer(id string) *MCPServer
+	FindMCPServerByName(agentID string, name string) *MCPServer
 
 	CreateMCPTool(t *MCPTool) *MCPTool
 	ListMCPToolsByServer(serverID string) []*MCPTool
 	ListMCPToolsByAgent(agentID string) []*MCPTool
+	ListGlobalMCPTools() []*MCPTool
+	FindMCPToolByName(name string) *MCPTool
 
 	CreateChatSession(s *ChatSession) *ChatSession
 	ListChatSessionsByUser(userID string) []*ChatSession
+	GetChatSession(id string) *ChatSession
+	DeleteChatSession(id string) bool
 
 	CreateRun(r *Run) (*Run, error)
 	FinishRun(id string, output map[string]interface{}, status string) bool
 	ListRunsBySession(sessionID string) []*Run
+	ListRunsByUser(userID string) []*Run
+	GetRun(runID string) *Run
 
 	CreateRunStep(rs *RunStep) *RunStep
 	FinishRunStep(id string, out map[string]interface{}, status string, latency int, errMsg string) bool
 	ListRunStepsByRun(runID string) []*RunStep
+	GetRunStep(id string) *RunStep
 
 	CreateChatMessage(cm *ChatMessage) *ChatMessage
 	ListChatMessagesBySession(sessionID string) []*ChatMessage

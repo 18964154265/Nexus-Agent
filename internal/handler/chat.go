@@ -2,9 +2,7 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"example.com/agent-server/internal/middleware"
@@ -159,112 +157,4 @@ func (h *Handler) SendChatMessage(c context.Context, ctx *app.RequestContext) {
 	lastMsg := allMsgs[len(allMsgs)-1]
 
 	response.Success(ctx, toMessageResp(lastMsg))
-}
-
-// =================================================================
-// 核心：仿真执行引擎 (Mock LLM & Tool Execution)
-// =================================================================
-// 这个函数模拟了 "LLM 思考 -> 调工具 -> 工具返回 -> LLM 回复" 的全过程
-func (h *Handler) simulateAgentExecution(run *store.Run, userPrompt string) string {
-
-	// 模拟思考耗时
-	time.Sleep(500 * time.Millisecond)
-
-	// 场景 A: 用户提到了 "git" -> 触发工具调用模拟
-	if strings.Contains(strings.ToLower(userPrompt), "git") {
-		return h.mockToolExecutionFlow(run)
-	}
-
-	// 场景 B: 普通对话 -> 直接回复
-	responseText := fmt.Sprintf("收到，我是 Nexus Agent。你刚才说的是: \"%s\"。这是一个模拟回复，并未接入真实 LLM。", userPrompt)
-
-	// 记录思考步骤 (Trace)
-	h.Store.CreateRunStep(&store.RunStep{
-		RunID:        run.ID,
-		StepType:     "thought",
-		Name:         "SimpleReply",
-		Status:       "completed",
-		StartedAt:    time.Now(),
-		FinishedAt:   time.Now(),
-		InputPayload: map[string]interface{}{"prompt": userPrompt},
-	})
-
-	// 记录 Assistant 回复
-	h.Store.CreateChatMessage(&store.ChatMessage{
-		SessionID: run.SessionID,
-		RunID:     run.ID,
-		Role:      "assistant",
-		Content:   createTextContent(responseText),
-	})
-
-	return responseText
-}
-
-// mockToolExecutionFlow 模拟复杂的工具调用链路
-func (h *Handler) mockToolExecutionFlow(run *store.Run) string {
-	// 1. Assistant 决定调用工具 (Thinking)
-	toolCallID := uuid.New().String()
-	toolName := "git_status"
-
-	// 记录 Message: "我打算调 git_status"
-	h.Store.CreateChatMessage(&store.ChatMessage{
-		SessionID: run.SessionID,
-		RunID:     run.ID,
-		Role:      "assistant",
-		Content: map[string]interface{}{
-			"type": "text",
-			"text": "检测到 Git 相关请求，正在查看仓库状态...",
-		},
-		// 关键：模拟 Tool Calls 结构 (OpenAI 格式)
-		// 这里简化存入 content，实际应该有专门字段或结构
-	})
-
-	// 记录 Run Step: Tool Start
-	h.Store.CreateRunStep(&store.RunStep{
-		RunID:        run.ID,
-		StepType:     "tool_start",
-		Name:         toolName,
-		Status:       "running",
-		InputPayload: map[string]interface{}{"repo": "."},
-		StartedAt:    time.Now(),
-	})
-
-	// 模拟工具执行耗时
-	time.Sleep(800 * time.Millisecond)
-
-	// 2. 工具执行结果 (Tool Output)
-	toolOutput := "On branch main\nYour branch is up to date with 'origin/main'.\nNothing to commit, working tree clean."
-
-	// 记录 Message: Tool 的返回值
-	h.Store.CreateChatMessage(&store.ChatMessage{
-		SessionID:  run.SessionID,
-		RunID:      run.ID,
-		Role:       "tool",
-		ToolCallID: toolCallID, // 对应之前的 ID
-		Content:    createTextContent(toolOutput),
-		IsHidden:   true, // 前端通常折叠这个
-	})
-
-	// 记录 Run Step: Tool End
-	h.Store.CreateRunStep(&store.RunStep{
-		RunID:         run.ID,
-		StepType:      "tool_end",
-		Name:          toolName,
-		Status:        "completed",
-		OutputPayload: map[string]interface{}{"stdout": toolOutput},
-		LatencyMS:     800,
-		FinishedAt:    time.Now(),
-	})
-
-	// 3. Assistant 根据工具结果生成最终回复
-	finalText := "已查看当前 Git 仓库状态：\n当前位于 **main** 分支，工作区是干净的，没有未提交的更改。"
-
-	h.Store.CreateChatMessage(&store.ChatMessage{
-		SessionID: run.SessionID,
-		RunID:     run.ID,
-		Role:      "assistant",
-		Content:   createTextContent(finalText),
-	})
-
-	return finalText
 }

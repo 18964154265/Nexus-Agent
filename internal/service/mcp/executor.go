@@ -15,10 +15,10 @@ import (
 
 // Executor 负责执行具体的工具逻辑
 type Executor struct {
-	Store *store.MemoryStore
+	Store store.Store
 }
 
-func NewExecutor(s *store.MemoryStore) *Executor {
+func NewExecutor(s store.Store) *Executor {
 	return &Executor{Store: s}
 }
 

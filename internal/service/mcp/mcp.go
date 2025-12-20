@@ -10,11 +10,11 @@ import (
 )
 
 type MCPService struct {
-	Store    *store.MemoryStore
+	Store    store.Store
 	Executor *Executor
 }
 
-func NewMCPService(s *store.MemoryStore) *MCPService {
+func NewMCPService(s store.Store) *MCPService {
 	return &MCPService{Store: s, Executor: NewExecutor(s)}
 }
 

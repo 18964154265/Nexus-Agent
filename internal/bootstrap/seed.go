@@ -9,7 +9,7 @@ import (
 
 // SeedDevOpsTeam 初始化 5 个核心角色
 // 在 main.go 的 server 启动前调用此函数
-func SeedDevOpsTeam(s *store.MemoryStore) {
+func SeedDevOpsTeam(s store.Store) {
 	// 定义我们需要的团队角色
 	team := []*store.Agent{
 		{
@@ -117,7 +117,7 @@ const (
 )
 
 // SeedMCPServers 初始化核心工具箱
-func SeedMCPServers(s *store.MemoryStore) {
+func SeedMCPServers(s store.Store) {
 	servers := []*store.MCPServer{
 		{
 			ID:            GitServerID,

@@ -7,12 +7,12 @@ import (
 )
 
 type Service struct {
-	Store *store.MemoryStore
+	Store store.Store
 	LLM   *llm.Client
 	MCP   *mcp.MCPService // <--- 新增
 }
 
-func NewService(s *store.MemoryStore, l *llm.Client) *Service {
+func NewService(s store.Store, l *llm.Client) *Service {
 	return &Service{
 		Store: s,
 		LLM:   l,

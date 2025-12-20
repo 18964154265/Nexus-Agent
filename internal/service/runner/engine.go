@@ -15,13 +15,13 @@ import (
 
 // AgentEngine 负责编排一次 Run 的全过程
 type AgentEngine struct {
-	Store       *store.MemoryStore
+	Store       store.Store
 	LLMClient   *llm.Client
 	runningRuns sync.Map        // map[string]context.CancelFunc
 	rootCtx     context.Context // 全局根上下文
 }
 
-func NewEngine(s *store.MemoryStore, c *llm.Client) *AgentEngine {
+func NewEngine(s store.Store, c *llm.Client) *AgentEngine {
 	e := &AgentEngine{Store: s, runningRuns: sync.Map{}, rootCtx: context.Background()}
 	if c != nil {
 		e.LLMClient = c
