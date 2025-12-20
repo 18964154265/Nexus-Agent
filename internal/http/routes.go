@@ -76,8 +76,8 @@ func RegisterRoutes(h *server.Hertz, hdl *handler.Handler, secret string) {
 	g.POST("/sessions/:id/chat", hdl.SendChatMessage)
 
 	// --- Observability ---
-	/*g.GET("/runs", hdl.ListRuns)
+	g.GET("/runs", hdl.ListRuns)
 	g.GET("/runs/:id", hdl.GetRunDetail)
 	g.GET("/runs/:id/trace", hdl.GetRunTrace)
-	g.POST("/runs/:id/cancel", hdl.CancelRun)*/
+	g.POST("/runs/:id/cancel", hdl.CancelRun)
 }

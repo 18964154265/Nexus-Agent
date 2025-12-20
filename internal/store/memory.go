@@ -507,6 +507,21 @@ func (m *MemoryStore) ListGlobalMCPTools() []*MCPTool {
 	return res
 }
 
+// internal/store/store.go
+
+// FindMCPToolByName 根据工具名查找工具定义 (MVP 简化版，假设工具名全局唯一)
+func (m *MemoryStore) FindMCPToolByName(name string) *MCPTool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, t := range m.mcpTools {
+		if t.Name == name {
+			return t
+		}
+	}
+	return nil
+}
+
 func (m *MemoryStore) CreateChatSession(s *ChatSession) *ChatSession {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -587,6 +602,22 @@ func (m *MemoryStore) ListRunsBySession(sessionID string) []*Run {
 			res = append(res, r)
 		}
 	}
+	return res
+}
+
+func (m *MemoryStore) ListRunsByUser(userID string) []*Run {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	res := []*Run{}
+	for _, r := range m.runs {
+		if r.UserID == userID {
+			res = append(res, r)
+		}
+	}
+	// 按开始时间倒序排列
+	sort.Slice(res, func(i, j int) bool {
+		return res[i].StartedAt.After(res[j].StartedAt)
+	})
 	return res
 }
 
