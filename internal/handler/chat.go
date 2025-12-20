@@ -138,7 +138,7 @@ func (h *Handler) SendChatMessage(c context.Context, ctx *app.RequestContext) {
 	// 注意：真实场景中，这里应该是异步的，或者 SSE 流式返回
 	// 这里我们模拟一个同步阻塞的过程，让前端一次性拿到结果
 
-	finalResponse, err := h.Engine.ExecuteRun(c, run.ID)
+	finalResponse, err := h.Engine.ExecuteRun(run.ID)
 	if err != nil {
 		h.Store.FinishRun(run.ID, nil, "failed")
 		response.ServerError(ctx, err)

@@ -2,57 +2,41 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"time"
 
+	"example.com/agent-server/internal/service/mcp"
 	"example.com/agent-server/internal/store"
 	"github.com/sashabaranov/go-openai"
 )
 
 // executeToolCall 分发并执行工具
 func (e *AgentEngine) executeToolCall(ctx context.Context, call openai.ToolCall) (string, error) {
-	name := call.Function.Name
+
+	// 为了代码跑通，我们临时在这里 new 一个 executor
+	// 最佳实践是在 NewEngine 里初始化它
+	executor := mcp.NewExecutor(e.Store)
+
+	// 1. 获取工具名和参数
+	// 现在 call 是具体类型，编译器能识别 Function 字段了
+	toolName := call.Function.Name
 	argsJSON := call.Function.Arguments
 
-	// 解析参数
-	var args map[string]interface{}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %v", err), nil
+	// 2. 反查 Tool 对应的 Server
+	// 我们需要先找到 tool 属于哪个 server
+	toolDef := e.Store.FindMCPToolByName(toolName)
+	if toolDef == nil {
+		return "", fmt.Errorf("tool definition not found: %s", toolName)
 	}
 
-	// === 核心：工具路由 ===
-	// 这里我们“硬编码”实现 seed.go 里初始化的那些工具
-	// 以后你可以把这里改成真正的 MCP Client RPC 调用
-	switch name {
-	// --- Git Tools ---
-	case "git_status":
-		return runCmd("git", "status")
-	case "git_log":
-		return runCmd("git", "log", "--oneline", "-n", "5")
-	case "git_diff":
-		return runCmd("git", "diff")
-
-	// --- Filesystem Tools ---
-	case "list_directory":
-		path := "."
-		if p, ok := args["path"].(string); ok {
-			path = p
-		}
-		return runCmd("ls", "-F", path)
-	case "read_file":
-		path, _ := args["path"].(string)
-		return runCmd("cat", path)
-
-	// --- Special Tools ---
-	case "delegate_to_specialist":
-		// 这里是父子 Agent 调度的入口（以后实现）
-		return "Mock: Task delegated to specialist.", nil
-
-	default:
-		return fmt.Sprintf("Error: Tool '%s' not found or not implemented in runner.", name), nil
+	server := e.Store.GetMCPServer(toolDef.ServerID)
+	if server == nil {
+		return "", fmt.Errorf("server not found for tool: %s", toolName)
 	}
+
+	// 3. 执行
+	return executor.ExecuteTool(ctx, server, toolName, argsJSON)
 }
 
 // runCmd 辅助函数：在服务器本地执行 Shell 命令
@@ -67,13 +51,14 @@ func runCmd(name string, args ...string) (string, error) {
 }
 
 // saveToolOutput 辅助：保存工具执行结果
-func (e *AgentEngine) saveToolOutput(run *store.Run, toolCallID string, output string) {
+func (e *AgentEngine) saveToolOutput(run *store.Run, toolCallID, output string) {
 	e.Store.CreateChatMessage(&store.ChatMessage{
 		SessionID:  run.SessionID,
 		RunID:      run.ID,
-		Role:       "tool",     // 必须是 tool
-		ToolCallID: toolCallID, // 必须对应
+		Role:       "tool", // 角色必须是 tool
 		Content:    map[string]interface{}{"type": "text", "text": output},
+		ToolCallID: toolCallID, // 必须填！跟 Assistant 的 tool_calls[i].id 对应
 		CreatedAt:  time.Now(),
+		IsHidden:   true, // 前端通常不展示大段的工具日志
 	})
 }

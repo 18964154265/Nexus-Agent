@@ -1,0 +1,50 @@
+graph TD
+    %% 全局根节点
+    Root((context.Background)):::root
+
+    subgraph "1. 发送消息流程 (HTTP Request A)"
+        ReqCtxA[HTTP Context A]:::http
+        LogicA[Handler: StartRun]:::logic
+        ReqCtxA --> LogicA
+    end
+
+    subgraph "2. 异步执行流程 (Goroutine)"
+        %% 这里是关键：新树枝是从 Background 长出来的，不是从 HTTP A 长出来的
+        RunCtx[Run Context]:::run
+        CancelFunc(CancelFunc 开关):::switch
+        
+        Engine[Agent Engine]:::engine
+        LLMReq[LLM Client Request]:::io
+        DBReq[DB Query]:::io
+
+        Root -->|WithCancel| RunCtx
+        RunCtx -.->|控制| CancelFunc
+        RunCtx --> Engine
+        Engine --> LLMReq
+        Engine --> DBReq
+    end
+
+    subgraph "3. 取消流程 (HTTP Request B)"
+        ReqCtxB[HTTP Context B]:::http
+        LogicB[Handler: CancelRun]:::logic
+        Map{sync.Map 注册表}:::storage
+
+        ReqCtxB --> LogicB
+        LogicB -->|查找| Map
+        Map -->|获取引用| CancelFunc
+    end
+
+    %% 动作关系
+    LogicA -->|1. 创建| RunCtx
+    LogicA -->|2. 存入| Map
+    CancelFunc -->|3. 触发 Done 信号| RunCtx
+    RunCtx -->|4. 级联取消| LLMReq
+
+    classDef root fill:#333,stroke:#fff,color:#fff
+    classDef http fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef logic fill:#fff9c4,stroke:#fbc02d,color:#000
+    classDef run fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef switch fill:#ffccbc,stroke:#bf360c,color:#000,stroke-dasharray: 5 5
+    classDef storage fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    classDef io fill:#ffebee,stroke:#c62828,color:#000
+    classDef engine fill:#e0f2f1,stroke:#00695c,color:#000

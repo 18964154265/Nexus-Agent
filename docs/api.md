@@ -264,7 +264,7 @@ OK
 - URL: `/api/sessions/:id`
 - Success Response：`{ "code": 0, "message": "success", "data": { "message":"Deleted" } }`
 
-### List Chat Messages
+### List Chat Messages 
 - Method: `GET`
 - URL: `/api/sessions/:id/messages`
 - Success Response：`{ "code": 0, "message": "success", "data": [ { "id":"...","role":"user|assistant|tool","content":{...},"tool_call_id":"...","created_at":"..." } ] }`

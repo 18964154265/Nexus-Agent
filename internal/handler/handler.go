@@ -18,7 +18,7 @@ func New(s *store.MemoryStore, secret string, svc *service.Service) *Handler {
 	return &Handler{
 		Store:     s,
 		JWTSecret: []byte(secret),
-		Engine:    runner.NewEngine(s),
+		Engine:    runner.NewEngine(s, svc.LLM),
 		Svc:       svc,
 	}
 }

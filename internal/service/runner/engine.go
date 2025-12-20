@@ -17,12 +17,15 @@ import (
 type AgentEngine struct {
 	Store       *store.MemoryStore
 	LLMClient   *llm.Client
-	runningRuns sync.Map // map[string]context.CancelFunc
+	runningRuns sync.Map        // map[string]context.CancelFunc
+	rootCtx     context.Context // 全局根上下文
 }
 
 func NewEngine(s *store.MemoryStore, c *llm.Client) *AgentEngine {
+	e := &AgentEngine{Store: s, runningRuns: sync.Map{}, rootCtx: context.Background()}
 	if c != nil {
-		return &AgentEngine{Store: s, LLMClient: c}
+		e.LLMClient = c
+		return e
 	}
 	apiKey := os.Getenv("LLM_API_KEY")
 	baseURL := os.Getenv("LLM_BASE_URL")
@@ -48,9 +51,10 @@ func NewEngine(s *store.MemoryStore, c *llm.Client) *AgentEngine {
 }
 
 // ExecuteRun 核心方法：执行 Agent 的思考循环
-func (e *AgentEngine) ExecuteRun(parentCtx context.Context, runID string) (string, error) {
-	// 1. 创建可取消的上下文
-	ctx, cancel := context.WithCancel(parentCtx)
+// 注意：runID 对应的任务将在 Engine 的 rootCtx 下运行，而非依赖调用者的 ctx
+func (e *AgentEngine) ExecuteRun(runID string) (string, error) {
+	// 1. 创建可取消的上下文，挂载在 rootCtx 下
+	ctx, cancel := context.WithCancel(e.rootCtx)
 	e.runningRuns.Store(runID, cancel)
 	defer func() {
 		cancel()
@@ -137,19 +141,21 @@ func (e *AgentEngine) ExecuteRun(parentCtx context.Context, runID string) (strin
 				var args map[string]interface{}
 				_ = json.Unmarshal([]byte(call.Function.Arguments), &args) // 忽略错误，仅仅为了记录
 
-				// 记录 Trace: Tool Start (不再是 nil)
-				e.saveStep(run, "tool_start", call.Function.Name, args)
+				// 记录 Trace: Tool Start
+				step := e.createStep(run, "tool_call", call.Function.Name, args)
 
 				// 执行工具逻辑
 				output, err := e.executeToolCall(ctx, call)
+				status := "completed"
+				errMsg := ""
 				if err != nil {
+					status = "failed"
+					errMsg = err.Error()
 					output = fmt.Sprintf("Tool Execution Error: %v", err)
 				}
 
 				// 记录 Trace: Tool End
-				e.saveStep(run, "tool_end", call.Function.Name, map[string]interface{}{
-					"output": output,
-				})
+				e.finishStep(step.ID, map[string]interface{}{"output": output}, status, errMsg)
 
 				// 将工具结果存入对话历史 (User 不可见，LLM 可见)
 				e.saveToolOutput(run, call.ID, output)
@@ -200,15 +206,28 @@ func (e *AgentEngine) saveMessage(run *store.Run, role, content, toolCallID stri
 	})
 }
 
-// 辅助函数：存步骤
-func (e *AgentEngine) saveStep(run *store.Run, stepType, name string, payload map[string]interface{}) {
-	e.Store.CreateRunStep(&store.RunStep{
-		RunID:         run.ID,
-		StepType:      stepType,
-		Name:          name,
-		OutputPayload: payload,
-		StartedAt:     time.Now(),
-	})
+// 辅助函数：创建步骤 (开始)
+func (e *AgentEngine) createStep(run *store.Run, stepType, name string, input map[string]interface{}) *store.RunStep {
+	step := &store.RunStep{
+		RunID:        run.ID,
+		StepType:     stepType,
+		Name:         name,
+		InputPayload: input,
+		Status:       "running",
+		StartedAt:    time.Now(),
+	}
+	return e.Store.CreateRunStep(step)
+}
+
+// 辅助函数：结束步骤 (完成)
+func (e *AgentEngine) finishStep(stepID string, output map[string]interface{}, status, errMsg string) {
+	start := time.Now() // 兜底，实际应该从 Store 取出来算
+	if step := e.Store.GetRunStep(stepID); step != nil {
+		start = step.StartedAt
+	}
+	latency := int(time.Since(start).Milliseconds())
+
+	e.Store.FinishRunStep(stepID, output, status, latency, errMsg)
 }
 
 // 简单的 Mock 判断逻辑

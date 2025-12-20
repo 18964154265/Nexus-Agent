@@ -630,6 +630,12 @@ func (m *MemoryStore) GetRun(runID string) *Run {
 	return m.runs[runID]
 }
 
+func (m *MemoryStore) GetRunStep(id string) *RunStep {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.runSteps[id]
+}
+
 func (m *MemoryStore) CreateRunStep(rs *RunStep) *RunStep {
 	m.mu.Lock()
 	defer m.mu.Unlock()
