@@ -1,21 +1,58 @@
 package store
 
 import (
+	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
+// JSONMap 定义通用的 JSONB 类型，并实现 Scanner/Valuer 接口 (如果 GORM 默认不支持 map[string]interface{})
+// 不过 GORM 对 map[string]interface{} + gorm:"type:jsonb" 支持良好，
+// 这里为了类型安全和统一，可以定义一个别名，或者直接用 map[string]interface{}
+type JSONMap map[string]interface{}
+
+// GORM 需要实现 Valuer 和 Scanner 接口才能正确处理自定义 map 类型
+// 简单起见，我们先用 map[string]interface{}，但在 struct tag 里必须指明 type:jsonb
+// 注意：Postgres driver (pgx) 对 map 的支持可能需要显式声明 Valuer/Scanner
+// 为了修复 "unsupported data type: &map[]" 错误，我们需要让它符合 sql.Scanner 和 driver.Valuer
+// 或者直接使用 datatypes.JSON (来自 gorm.io/datatypes)
+// 但为了少引入依赖，我们定义一个包装类型
+
+func (m JSONMap) Value() (driver.Value, error) {
+	if m == nil {
+		return nil, nil
+	}
+	return json.Marshal(m)
+}
+
+func (m *JSONMap) Scan(value interface{}) error {
+	if value == nil {
+		*m = nil
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("failed to unmarshal JSONB value: %v", value)
+	}
+	result := make(JSONMap)
+	err := json.Unmarshal(bytes, &result)
+	*m = result
+	return err
+}
+
 type User struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Password  string    `json:"password"`
-	Roles     []string  `json:"roles"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string         `json:"id"`
+	Email     string         `json:"email"`
+	Name      string         `json:"name"`
+	Password  string         `json:"password"`
+	Roles     pq.StringArray `json:"roles" gorm:"type:text[]"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 type RefreshToken struct {
@@ -47,57 +84,57 @@ type UserIntegration struct {
 }
 
 type KnowledgeBase struct {
-	ID          string                 `json:"id"`
-	UserID      string                 `json:"user_id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	IsPublic    bool                   `json:"is_public"`
-	MetaInfo    map[string]interface{} `json:"meta_info"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ID          string    `json:"id"`
+	UserID      string    `json:"user_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	IsPublic    bool      `json:"is_public"`
+	MetaInfo    JSONMap   `json:"meta_info" gorm:"type:jsonb"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Agent struct {
-	ID               string                 `json:"id"`
-	OwnerUserID      string                 `json:"owner_user_id"`
-	Name             string                 `json:"name"`
-	Description      string                 `json:"description"`
-	ModelName        string                 `json:"model_name"`
-	SystemPrompt     string                 `json:"system_prompt"`
-	Temperature      float64                `json:"temperature"`
-	KnowledgeBaseIDs []string               `json:"knowledge_base_ids"`
-	Status           string                 `json:"status"`
-	ExtraConfig      map[string]interface{} `json:"extra_config"`
-	Type             string                 `json:"type"`
-	Capabilities     []string               `json:"capabilities"`
-	Concurrency      int                    `json:"concurrency"`
-	Tags             []string               `json:"tags"`
-	Meta             map[string]interface{} `json:"meta"`
-	Token            string                 `json:"token"`
-	CreatedAt        time.Time              `json:"created_at"`
-	UpdatedAt        time.Time              `json:"updated_at"`
+	ID               string         `json:"id"`
+	OwnerUserID      string         `json:"owner_user_id"`
+	Name             string         `json:"name"`
+	Description      string         `json:"description"`
+	ModelName        string         `json:"model_name"`
+	SystemPrompt     string         `json:"system_prompt"`
+	Temperature      float64        `json:"temperature"`
+	KnowledgeBaseIDs pq.StringArray `json:"knowledge_base_ids" gorm:"type:text[]"`
+	Status           string         `json:"status"`
+	ExtraConfig      JSONMap        `json:"extra_config" gorm:"type:jsonb"`
+	Type             string         `json:"type"`
+	Capabilities     pq.StringArray `json:"capabilities" gorm:"type:text[]"`
+	Concurrency      int            `json:"concurrency"`
+	Tags             pq.StringArray `json:"tags" gorm:"type:text[]"`
+	Meta             JSONMap        `json:"meta" gorm:"type:jsonb"`
+	Token            string         `json:"token"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
 }
 
 type MCPServer struct {
-	ID               string                 `json:"id"`
-	AgentID          string                 `json:"agent_id"`
-	Name             string                 `json:"name"`
-	TransportType    string                 `json:"transport_type"`
-	ConnectionConfig map[string]interface{} `json:"connection_config"`
-	IsGlobal         bool                   `json:"is_global"` //这是平台预先定义好的几个常用server
-	Status           string                 `json:"status"`
-	CreatedAt        time.Time              `json:"created_at"`
-	UpdatedAt        time.Time              `json:"updated_at"`
+	ID               string    `json:"id"`
+	AgentID          string    `json:"agent_id"`
+	Name             string    `json:"name"`
+	TransportType    string    `json:"transport_type"`
+	ConnectionConfig JSONMap   `json:"connection_config" gorm:"type:jsonb"`
+	IsGlobal         bool      `json:"is_global"` //这是平台预先定义好的几个常用server
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type MCPTool struct {
-	ID          string                 `json:"id"`
-	ServerID    string                 `json:"server_id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	InputSchema map[string]interface{} `json:"input_schema"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ID          string    `json:"id"`
+	ServerID    string    `json:"server_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	InputSchema JSONMap   `json:"input_schema" gorm:"type:jsonb"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type ChatSession struct {
@@ -111,44 +148,44 @@ type ChatSession struct {
 }
 
 type Run struct {
-	ID            string                 `json:"id"`
-	SessionID     string                 `json:"session_id"`
-	UserID        string                 `json:"user_id"`
-	AgentID       string                 `json:"agent_id"`
-	ParentRunID   string                 `json:"parent_run_id"`
-	TraceID       string                 `json:"trace_id"`
-	Status        string                 `json:"status"`
-	InputPayload  map[string]interface{} `json:"input_payload"`
-	OutputPayload map[string]interface{} `json:"output_payload"`
-	UsageMetadata map[string]interface{} `json:"usage_metadata"`
-	StartedAt     time.Time              `json:"started_at"`
-	FinishedAt    time.Time              `json:"finished_at"`
+	ID            string    `json:"id"`
+	SessionID     string    `json:"session_id"`
+	UserID        string    `json:"user_id"`
+	AgentID       string    `json:"agent_id"`
+	ParentRunID   string    `json:"parent_run_id"`
+	TraceID       string    `json:"trace_id"`
+	Status        string    `json:"status"`
+	InputPayload  JSONMap   `json:"input_payload" gorm:"type:jsonb"`
+	OutputPayload JSONMap   `json:"output_payload" gorm:"type:jsonb"`
+	UsageMetadata JSONMap   `json:"usage_metadata" gorm:"type:jsonb"`
+	StartedAt     time.Time `json:"started_at"`
+	FinishedAt    time.Time `json:"finished_at"`
 }
 
 type RunStep struct {
-	ID            string                 `json:"id"`
-	RunID         string                 `json:"run_id"`
-	StepType      string                 `json:"step_type"`
-	Name          string                 `json:"name"`
-	InputPayload  map[string]interface{} `json:"input_payload"`
-	OutputPayload map[string]interface{} `json:"output_payload"`
-	Status        string                 `json:"status"`
-	ErrorMessage  string                 `json:"error_message"`
-	LatencyMS     int                    `json:"latency_ms"`
-	StartedAt     time.Time              `json:"started_at"`
-	FinishedAt    time.Time              `json:"finished_at"`
+	ID            string    `json:"id"`
+	RunID         string    `json:"run_id"`
+	StepType      string    `json:"step_type"`
+	Name          string    `json:"name"`
+	InputPayload  JSONMap   `json:"input_payload" gorm:"type:jsonb"`
+	OutputPayload JSONMap   `json:"output_payload" gorm:"type:jsonb"`
+	Status        string    `json:"status"`
+	ErrorMessage  string    `json:"error_message"`
+	LatencyMS     int       `json:"latency_ms"`
+	StartedAt     time.Time `json:"started_at"`
+	FinishedAt    time.Time `json:"finished_at"`
 }
 
 type ChatMessage struct {
-	ID         string                 `json:"id"`
-	SessionID  string                 `json:"session_id"`
-	RunID      string                 `json:"run_id"`
-	Role       string                 `json:"role"`
-	Content    map[string]interface{} `json:"content"`
-	ToolCallID string                 `json:"tool_call_id"`
-	TokenCount int                    `json:"token_count"`
-	IsHidden   bool                   `json:"is_hidden"`
-	CreatedAt  time.Time              `json:"created_at"`
+	ID         string    `json:"id"`
+	SessionID  string    `json:"session_id"`
+	RunID      string    `json:"run_id"`
+	Role       string    `json:"role"`
+	Content    JSONMap   `json:"content" gorm:"type:jsonb"`
+	ToolCallID string    `json:"tool_call_id"`
+	TokenCount int       `json:"token_count"`
+	IsHidden   bool      `json:"is_hidden"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type MemoryStore struct {

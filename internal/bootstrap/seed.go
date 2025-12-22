@@ -10,9 +10,10 @@ import (
 // SeedDevOpsTeam 初始化 5 个核心角色
 // 在 main.go 的 server 启动前调用此函数
 func SeedDevOpsTeam(s store.Store) {
-	// 定义我们需要的团队角色
+	// 定义固定 ID，避免重复创建时 ID 变化
 	team := []*store.Agent{
 		{
+			ID:          "00000000-0000-0000-0000-100000000001",
 			Name:        "DevOps Manager (项目经理)",
 			Type:        "system",
 			Description: "负责需求分析、任务拆解与分派",
@@ -36,6 +37,7 @@ func SeedDevOpsTeam(s store.Store) {
 请使用 'delegate_task' 工具来分派任务。`,
 		},
 		{
+			ID:          "00000000-0000-0000-0000-100000000002",
 			Name:        "Software Architect (架构师)",
 			Type:        "system",
 			Description: "负责高层设计与技术决策",
@@ -50,6 +52,7 @@ func SeedDevOpsTeam(s store.Store) {
 4. 确保设计符合高内聚、低耦合原则。`,
 		},
 		{
+			ID:          "00000000-0000-0000-0000-100000000003",
 			Name:        "Senior Coder (开发工程师)",
 			Type:        "system",
 			Description: "负责高质量代码实现",
@@ -66,6 +69,7 @@ func SeedDevOpsTeam(s store.Store) {
 注意：只输出代码和必要的解释，不要废话。`,
 		},
 		{
+			ID:          "00000000-0000-0000-0000-100000000004",
 			Name:        "QA Engineer (单元测试专家)",
 			Type:        "system",
 			Description: "负责编写测试用例，保证覆盖率",
@@ -80,6 +84,7 @@ func SeedDevOpsTeam(s store.Store) {
 4. 使用标准的测试框架（如 Go 的 testing 或 Python 的 pytest）。`,
 		},
 		{
+			ID:          "00000000-0000-0000-0000-100000000005",
 			Name:        "Code Reviewer (代码审计员)",
 			Type:        "system",
 			Description: "负责代码审查、安全检查",
@@ -101,9 +106,13 @@ func SeedDevOpsTeam(s store.Store) {
 
 	// 遍历并创建（如果不存在）
 	for _, agent := range team {
-		// 简单的去重检查：实际可以用 Name 或 ID 查
-		// 这里假设我们每次启动如果不存库，内存都是空的，所以直接创建
-		// 如果你接了 Postgres，这里需要先 CheckExist
+		// 先检查 ID 是否存在
+		if existing := s.GetAgent(agent.ID); existing != nil {
+			// 可选：如果存在则更新配置（保证 Prompt 是最新的）
+			// 这里简单跳过
+			continue
+		}
+		
 		s.CreateAgent(agent)
 		log.Printf("Initialized Agent: %s", agent.Name)
 	}

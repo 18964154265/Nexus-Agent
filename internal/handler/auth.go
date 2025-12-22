@@ -33,7 +33,7 @@ type RefreshReq struct {
 }
 
 type AuthResponse struct {
-	AccessToken  string      `json:"token"`
+	AccessToken  string      `json:"access_token"`
 	RefreshToken string      `json:"refresh_token"`
 	User         *store.User `json:"user"`
 }
