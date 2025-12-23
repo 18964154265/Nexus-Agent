@@ -24,7 +24,8 @@ type SendChatReq struct {
 type ChatMessageResp struct {
 	ID         string                 `json:"id"`
 	Role       string                 `json:"role"`
-	Content    map[string]interface{} `json:"content"` // JSON 结构
+	Content    map[string]interface{} `json:"content"`          // JSON 结构
+	RunID      string                 `json:"run_id,omitempty"` // 关联的 Run ID
 	ToolCallID string                 `json:"tool_call_id,omitempty"`
 	CreatedAt  string                 `json:"created_at"`
 }
@@ -38,6 +39,7 @@ func toMessageResp(m *store.ChatMessage) *ChatMessageResp {
 		ID:         m.ID,
 		Role:       m.Role,
 		Content:    m.Content,
+		RunID:      m.RunID,
 		ToolCallID: m.ToolCallID,
 		CreatedAt:  m.CreatedAt.Format(time.RFC3339),
 	}

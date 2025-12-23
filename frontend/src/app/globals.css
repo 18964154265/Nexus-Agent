@@ -24,3 +24,14 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Select dropdown styling */
+select option {
+  color: #111827 !important;
+  background-color: white !important;
+}
+
+select option:checked {
+  background-color: #059669 !important;
+  color: white !important;
+}

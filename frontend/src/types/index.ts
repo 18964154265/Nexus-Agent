@@ -107,6 +107,7 @@ export interface ChatMessage {
     [key: string]: any;
   };
   
+  run_id?: string; // 关联的 Run ID（仅当 role === 'assistant' 时可能有值）
   tool_call_id?: string; // 仅当 role === 'tool' 时有值
   created_at: string;
 }
