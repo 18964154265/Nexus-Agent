@@ -2,12 +2,11 @@
 
 import useSWR from "swr";
 import { apiClient } from "@/lib/apiClient";
+import { fetcher } from "@/lib/fetcher";
 import Link from "next/link";
 import { Plus, Bot, Settings, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ApiResponse, Agent } from "@/types";
-
-const fetcher = (url: string) => apiClient.get<ApiResponse<Agent[]>>(url).then((res) => res.data || []);
 
 export default function AgentsListPage() {
   const { data: agents, error, isLoading, mutate } = useSWR<Agent[]>("/api/agents", fetcher, {

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { apiClient } from "@/lib/apiClient";
+import { fetcher } from "@/lib/fetcher";
 import { 
   Plus, 
   RefreshCw, 
@@ -16,8 +17,6 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import type { ApiResponse, MCPServer, MCPTool } from "@/types";
-
-const fetcher = (url: string) => apiClient.get<ApiResponse<MCPServer[]>>(url).then((res) => res.data || []);
 
 type ServerStatus = 'active' | 'error' | 'connecting';
 type TransportType = 'stdio' | 'sse';
@@ -344,7 +343,10 @@ function RegisterModal({ onClose }: RegisterModalProps) {
         payload.connection_config.url = formData.url;
       }
 
-      await apiClient.post<ApiResponse<MCPServer>>("/api/mcp/servers", payload);
+      const res = await apiClient.post<MCPServer>("/api/mcp/servers", payload);
+      if (res.code !== 0) {
+        throw new Error(res.message || "注册失败");
+      }
       onClose();
       setFormData({ name: "", command: "", args: "", url: "" });
       setTransportType("stdio");

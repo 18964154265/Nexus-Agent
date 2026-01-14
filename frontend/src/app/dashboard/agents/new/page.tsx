@@ -7,6 +7,7 @@ import Link from "next/link";
 import { clsx } from "clsx";
 import useSWR from "swr";
 import { apiClient } from "@/lib/apiClient";
+import { fetcher } from "@/lib/fetcher";
 import { useRouter } from "next/navigation";
 import Editor from "react-simple-code-editor";
 import { highlight, languages } from "prismjs";
@@ -20,8 +21,6 @@ const DEFAULT_SYSTEM_PROMPT_JSON = JSON.stringify({
   responsibilities: ["回答用户问题", "提供建议"],
   rules: ["保持礼貌", "实事求是"]
 }, null, 2);
-
-const fetcher = (url: string) => apiClient.get<ApiResponse<any[]>>(url).then((res) => res.data || []);
 
 export default function CreateAgentPage() {
   const router = useRouter();
@@ -92,7 +91,10 @@ export default function CreateAgentPage() {
         }
       };
 
-      await apiClient.post<ApiResponse<Agent>>("/api/agents", payload);
+      const res = await apiClient.post<Agent>("/api/agents", payload);
+      if (res.code !== 0) {
+        throw new Error(res.message || "创建失败");
+      }
       router.push("/dashboard/agents");
     } catch (error) {
       console.error(error);

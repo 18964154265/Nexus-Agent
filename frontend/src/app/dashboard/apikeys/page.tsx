@@ -3,11 +3,10 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { apiClient } from "@/lib/apiClient";
+import { fetcher } from "@/lib/fetcher";
 import { Plus, Copy, Check, Trash2, AlertTriangle, X } from "lucide-react";
 import { clsx } from "clsx";
 import type { ApiResponse, APIKey } from "@/types";
-
-const fetcher = (url: string) => apiClient.get<ApiResponse<APIKey[]>>(url).then((res) => res.data || []);
 
 // Create API Key Response type
 interface CreateAPIKeyResp {
@@ -61,9 +60,9 @@ export default function APIKeysPage() {
 
     setIsGenerating(true);
     try {
-      const res = await apiClient.post("/api/api-keys", {
+      const res = await apiClient.post<CreateAPIKeyResp>("/api/api-keys", {
         name: keyName,
-      }) as ApiResponse<CreateAPIKeyResp>;
+      });
 
       if (res.code === 0 && res.data) {
         setNewKey(res.data);

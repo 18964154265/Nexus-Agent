@@ -2,20 +2,12 @@
 
 import useSWR from "swr";
 import { apiClient } from "@/lib/apiClient";
+import { fetcher } from "@/lib/fetcher";
 import Link from "next/link";
 import { Plus, MessageSquare, Trash2, Bot, Clock, X, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { clsx } from "clsx";
 import type { ApiResponse, ChatSession, Agent } from "@/types";
-
-const fetcher = (url: string) => 
-  apiClient.get<ApiResponse<any>>(url).then((res) => {
-    // apiClient 拦截器已经返回了 response.data，所以 res 就是 ApiResponse
-    if (res && res.code === 0 && res.data) {
-      return res.data;
-    }
-    return [];
-  });
 
 export default function SessionsListPage() {
   const { data: sessions, error, isLoading, mutate } = useSWR<ChatSession[]>(
@@ -190,9 +182,9 @@ function CreateSessionModal({ agents, agentsError, onClose, onSuccess }: CreateS
     setIsCreating(true);
     setError("");
     try {
-      const res = await apiClient.post(`/api/sessions`, {
+      const res = await apiClient.post<ChatSession>(`/api/sessions`, {
         agent_id: selectedAgentId,
-      }) as ApiResponse<ChatSession>;
+      });
       
       if (res.code === 0 && res.data) {
         onSuccess(res.data.id);

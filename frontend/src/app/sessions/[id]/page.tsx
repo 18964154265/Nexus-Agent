@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, use } from "react";
 import useSWR from "swr";
 import { apiClient } from "@/lib/apiClient";
+import { fetcher } from "@/lib/fetcher";
 import { 
   Send, 
   Brain, 
@@ -22,14 +23,6 @@ import {
 import { clsx } from "clsx";
 import ReactMarkdown from "react-markdown";
 import type { ApiResponse, ChatMessage, ChatSession, Run, RunStep } from "@/types";
-
-const fetcher = (url: string) => 
-  apiClient.get<ApiResponse<any>>(url).then((res) => {
-    if (res.code === 0 && res.data) {
-      return res.data;
-    }
-    return null;
-  });
 
 // Message interface for UI
 interface Message {
@@ -55,6 +48,7 @@ interface TraceNode {
   output?: string; // JSON string or logs
   children?: TraceNode[];
 }
+
 
 interface ChatPageProps {
   params: Promise<{
@@ -108,17 +102,14 @@ export default function ChatPage({ params }: ChatPageProps) {
   const { data: allRunSteps } = useSWR<Record<string, RunStep[]>>(
     runIds.length > 0 
       ? Promise.all(
-          runIds.map(runId => 
-            apiClient.get<ApiResponse<RunStep[]>>(`/api/runs/${runId}/trace`)
-              .then(res => {
-                const data = res.data;
-                if (data && data.code === 0 && Array.isArray(data.data)) {
-                  return { runId, steps: data.data };
-                }
-                return { runId, steps: [] };
-              })
-              .catch(() => ({ runId, steps: [] }))
-          )
+          runIds.map(async (runId) => {
+            try {
+              const steps = await fetcher<RunStep[]>(`/api/runs/${runId}/trace`);
+              return { runId, steps };
+            } catch {
+              return { runId, steps: [] };
+            }
+          })
         ).then(results => {
           const map: Record<string, RunStep[]> = {};
           results.forEach(({ runId, steps }) => {
@@ -184,12 +175,14 @@ export default function ChatPage({ params }: ChatPageProps) {
     setIsSending(true);
 
     try {
-      const res = await apiClient.post(`/api/sessions/${sessionId}/chat`, {
+      const res = await apiClient.post<ChatMessage>(`/api/sessions/${sessionId}/chat`, {
         content: userMessage,
-      }) as ApiResponse<ChatMessage>;
+      });
 
       if (res.code === 0) {
         mutate(); // Refresh messages
+      } else {
+        alert(`发送失败: ${res.message || "未知错误"}`);
       }
     } catch (error) {
       console.error("Send message error:", error);
@@ -220,7 +213,10 @@ export default function ChatPage({ params }: ChatPageProps) {
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={clsx(
+        "flex flex-col overflow-hidden transition-all duration-300 shrink-0",
+        isTraceDrawerOpen ? "w-[calc(100%-600px)] sm:w-[calc(100%-600px)]" : "w-full"
+      )}>
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
@@ -382,13 +378,7 @@ function TraceDrawer({ runId, onClose }: TraceDrawerProps) {
   // Fetch trace data
   const { data: traceData, isLoading } = useSWR<RunStep[]>(
     runId ? `/api/runs/${runId}/trace` : null,
-    async (url: string) => {
-      const res = await apiClient.get<ApiResponse<RunStep[]>>(url);
-      if (res.data && res.data.code === 0 && Array.isArray(res.data.data)) {
-        return res.data.data;
-      }
-      return [];
-    }
+    fetcher
   );
 
   // Convert RunSteps to TraceNode tree (支持 children)
@@ -464,15 +454,7 @@ function TraceDrawer({ runId, onClose }: TraceDrawerProps) {
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-20 z-40"
-        onClick={onClose}
-      />
-      
-      {/* Drawer */}
-      <div className="fixed right-0 top-0 bottom-0 w-full sm:max-w-2xl bg-white shadow-xl z-50 flex flex-col">
+    <div className="fixed right-0 top-0 bottom-0 w-[50%] sm:w-[600px] bg-white border-l border-gray-200 shadow-2xl flex flex-col z-30">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
           <div>
@@ -513,7 +495,6 @@ function TraceDrawer({ runId, onClose }: TraceDrawerProps) {
           )}
         </div>
       </div>
-    </>
   );
 }
 

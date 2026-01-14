@@ -37,10 +37,10 @@ export default function LoginPage() {
         setErrorMsg("注册成功，请登录");
       } else {
         // 登录
-        const res = await apiClient.post("/api/auth/login", {
+        const res = await apiClient.post<LoginResp>("/api/auth/login", {
           email: data.email,
           password: data.password,
-        }) as ApiResponse<LoginResp>;
+        });
 
         // 后端返回格式: { code: 0, data: { access_token: "...", refresh_token: "...", user: {...} }, message: "success" }
         if (res.code === 0 && res.data) {
