@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"example.com/agent-server/internal/store" // 引入你的 store 包
 	"github.com/sashabaranov/go-openai"
@@ -45,6 +46,12 @@ type ChatRequest struct {
 
 	History []*store.ChatMessage // 使用数据库模型
 	Tools   []*store.MCPTool     // 使用数据库模型
+
+	// 允许 LLM 选择其它 Agent（handoff）
+	HandoffCandidates []HandoffCandidate
+
+	// 是否强制提示 LLM 返回携带 handoff 字段的 JSON
+	ForceHandoff bool
 }
 
 // ChatResponse 统一响应结果
@@ -56,7 +63,28 @@ type ChatResponse struct {
 	// 为了简单起见，这里先保留 openai.ToolCall，但理想情况应该转换成自定义 DTO
 	ToolCalls []openai.ToolCall
 
+	// handoff 决策；TargetAgentID 为空代表不切换
+	Handoff *HandoffDecision
+
+	// 原始 JSON 文本（若 Content 为结构化 JSON）
+	RawPayload map[string]interface{}
+
 	Usage map[string]int // {prompt: 10, completion: 20}
+}
+
+// HandoffCandidate 描述可供切换的 Agent
+type HandoffCandidate struct {
+	AgentID     string `json:"agent_id"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// HandoffDecision 模型返回的切换决策
+type HandoffDecision struct {
+	TargetAgentID    string                 `json:"target_agent_id"`
+	Reason           string                 `json:"reason,omitempty"`
+	PreferredServer  string                 `json:"preferred_server,omitempty"` // 允许模型建议 MCP server
+	AdditionalFields map[string]interface{} `json:"additional_fields,omitempty"`
 }
 
 // ChatCompletion 调用大模型
@@ -83,6 +111,8 @@ func (c *Client) ChatCompletion(ctx context.Context, req *ChatRequest) (*ChatRes
 	// 4. 解析结果
 	choice := resp.Choices[0]
 
+	text, handoff, raw := parseContentAndHandoff(choice.Message.Content)
+
 	usage := map[string]int{
 		"prompt_tokens":     resp.Usage.PromptTokens,
 		"completion_tokens": resp.Usage.CompletionTokens,
@@ -90,9 +120,11 @@ func (c *Client) ChatCompletion(ctx context.Context, req *ChatRequest) (*ChatRes
 	}
 
 	return &ChatResponse{
-		Content:   choice.Message.Content,
-		ToolCalls: choice.Message.ToolCalls,
-		Usage:     usage,
+		Content:    text,
+		ToolCalls:  choice.Message.ToolCalls,
+		Handoff:    handoff,
+		RawPayload: raw,
+		Usage:      usage,
 	}, nil
 }
 
@@ -108,6 +140,14 @@ func (c *Client) buildMessages(req *ChatRequest) []openai.ChatCompletionMessage 
 		msgs = append(msgs, openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleSystem,
 			Content: req.SystemPrompt,
+		})
+	}
+
+	// 1.1 handoff 规范提示（确保模型总带 handoff 字段）
+	if req.ForceHandoff {
+		msgs = append(msgs, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleSystem,
+			Content: buildHandoffInstruction(req.HandoffCandidates),
 		})
 	}
 
@@ -181,4 +221,77 @@ func extractContent(contentMap map[string]interface{}) string {
 		return string(b)
 	}
 	return ""
+}
+
+// parseContentAndHandoff 解析返回文本，提取 handoff
+func parseContentAndHandoff(content string) (string, *HandoffDecision, map[string]interface{}) {
+	// 期望模型返回 JSON：{"text":"...", "handoff":{...}}
+	var wrapper map[string]interface{}
+	if err := json.Unmarshal([]byte(content), &wrapper); err != nil {
+		// 不是 JSON，直接返回原文
+		return content, nil, nil
+	}
+
+	var handoff *HandoffDecision
+	if hv, ok := wrapper["handoff"]; ok {
+		if hb, err := json.Marshal(hv); err == nil {
+			tmp := &HandoffDecision{}
+			if err := json.Unmarshal(hb, tmp); err == nil {
+				// 允许空 TargetAgentID 表示“不切换”
+				handoff = tmp
+			}
+		}
+	}
+
+	// text 字段优先，否则尝试 message/content
+	text := content
+	if tv, ok := wrapper["text"].(string); ok && tv != "" {
+		text = tv
+	} else if mv, ok := wrapper["message"].(string); ok && mv != "" {
+		text = mv
+	}
+
+	return text, handoff, wrapper
+}
+
+// buildHandoffInstruction 生成系统提示，强制模型输出 handoff 字段
+func buildHandoffInstruction(candidates []HandoffCandidate) string {
+	var sb strings.Builder
+	sb.WriteString("You have the ability to transfer conversations to other agents.\n")
+	sb.WriteString("Available transfers:\n\n")
+
+	if len(candidates) == 0 {
+		sb.WriteString("  (no available agents; keep target_agent_id empty)\n\n")
+	} else {
+		for i, c := range candidates {
+			sb.WriteString(fmt.Sprintf("%d. %s - %s (%s)\n", i+1, safeName(c.Name), safeDesc(c.Description), c.AgentID))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("Each agent has specific expertise. Choose to transfer when:\n")
+	sb.WriteString("- The user's question is outside your scope\n")
+	sb.WriteString("- Another agent is better suited for the task\n")
+	sb.WriteString("- You cannot complete the user's request\n\n")
+	sb.WriteString("To transfer, ALWAYS reply with JSON only:\n")
+	sb.WriteString("{\"text\": \"...\", \"handoff\": {\"target_agent_id\": \"\", \"reason\": \"\", \"preferred_server\": \"\"}}\n")
+	sb.WriteString("Rules:\n")
+	sb.WriteString("- target_agent_id empty string => do not transfer.\n")
+	sb.WriteString("- preferred_server optional; leave empty if not sure.\n")
+	sb.WriteString("- Respond with JSON only, no extra text.")
+	return sb.String()
+}
+
+func safeName(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "Unnamed Agent"
+	}
+	return v
+}
+
+func safeDesc(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "No description"
+	}
+	return v
 }
