@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"example.com/agent-server/internal/service/llm"
+	"example.com/agent-server/internal/service/mcp"
 	"example.com/agent-server/internal/store"
 )
 
@@ -237,6 +238,208 @@ func (e *AgentEngine) ExecuteRun(runID string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("max steps reached")
+}
+
+// RunStreamEvent 流式执行返回给 Handler 的事件
+type RunStreamEvent struct {
+	Type    string `json:"type"` // "content", "tool_start", "tool_end", "handoff", "error", "done"
+	Content string `json:"content,omitempty"`
+	Tool    string `json:"tool,omitempty"`     // 工具名
+	AgentID string `json:"agent_id,omitempty"` // handoff 目标
+}
+
+// ExecuteRunStream 流式执行 Agent，通过 channel 推送事件
+func (e *AgentEngine) ExecuteRunStream(runID string, outCh chan<- RunStreamEvent) {
+	ctx, cancel := context.WithCancel(e.rootCtx)
+	e.runningRuns.Store(runID, cancel)
+	defer func() {
+		cancel()
+		e.runningRuns.Delete(runID)
+		close(outCh)
+	}()
+
+	run := e.Store.GetRun(runID)
+	if run == nil {
+		outCh <- RunStreamEvent{Type: "error", Content: "run not found"}
+		return
+	}
+	session := e.Store.GetChatSession(run.SessionID)
+	if session == nil {
+		outCh <- RunStreamEvent{Type: "error", Content: "session not found"}
+		return
+	}
+	agent := e.Store.GetAgent(run.AgentID)
+	if agent == nil {
+		outCh <- RunStreamEvent{Type: "error", Content: "agent not found"}
+		return
+	}
+
+	maxSteps := 5
+	var fullResponseBuffer strings.Builder
+
+	for i := 0; i < maxSteps; i++ {
+		history := e.Store.ListChatMessagesBySession(session.ID)
+		tools := e.Store.ListMCPToolsByAgent(agent.ID)
+		handoffCandidates := e.buildHandoffCandidates(agent.ID)
+
+		req := llm.ChatRequest{
+			SystemPrompt:      agent.SystemPrompt + "\n\n" + buildToolInstruction(tools),
+			History:           history,
+			Tools:             tools,
+			HandoffCandidates: handoffCandidates,
+			ForceHandoff:      true,
+		}
+
+		// 调用流式 LLM
+		llmCh, err := e.LLMClient.ChatStream(ctx, &req)
+		if err != nil {
+			outCh <- RunStreamEvent{Type: "error", Content: err.Error()}
+			e.Store.FinishRun(run.ID, map[string]interface{}{"error": err.Error()}, "failed")
+			return
+		}
+
+		// 本轮内容缓冲
+		var roundContent strings.Builder
+		var pendingToolCalls []llm.ToolCallInfo
+		var pendingHandoff *llm.HandoffDecision
+
+		// 监听 LLM 流式输出
+		for event := range llmCh {
+			switch event.Type {
+			case "content":
+				roundContent.WriteString(event.Content)
+				fullResponseBuffer.WriteString(event.Content)
+				outCh <- RunStreamEvent{Type: "content", Content: event.Content}
+
+			case "tool_call":
+				pendingToolCalls = event.ToolCalls
+
+			case "handoff":
+				pendingHandoff = event.Handoff
+
+			case "error":
+				outCh <- RunStreamEvent{Type: "error", Content: event.Error}
+				e.Store.FinishRun(run.ID, map[string]interface{}{"error": event.Error}, "failed")
+				return
+
+			case "done":
+				// 正常结束，无工具调用
+			}
+		}
+
+		// 处理 handoff
+		if pendingHandoff != nil && pendingHandoff.TargetAgentID != "" {
+			// 存储 assistant 消息
+			e.Store.CreateChatMessage(&store.ChatMessage{
+				SessionID: session.ID,
+				RunID:     run.ID,
+				Role:      "assistant",
+				Content: map[string]interface{}{
+					"text":    roundContent.String(),
+					"handoff": pendingHandoff,
+				},
+				CreatedAt: time.Now(),
+			})
+
+			outCh <- RunStreamEvent{Type: "handoff", AgentID: pendingHandoff.TargetAgentID, Content: pendingHandoff.Reason}
+
+			// 创建子 Run（MVP 先不流式递归，直接同步执行）
+			childResp, childRun, err := e.executeHandoff(ctx, run, pendingHandoff)
+			if err != nil {
+				outCh <- RunStreamEvent{Type: "error", Content: err.Error()}
+				e.Store.FinishRun(run.ID, map[string]interface{}{"error": err.Error()}, "failed")
+				return
+			}
+
+			// 发送子 Agent 的结果
+			outCh <- RunStreamEvent{Type: "content", Content: childResp}
+			outCh <- RunStreamEvent{Type: "done"}
+
+			e.Store.FinishRun(run.ID, map[string]interface{}{
+				"child_run_id": childRun.ID,
+				"response":     childResp,
+			}, "succeeded")
+			return
+		}
+
+		// 处理工具调用
+		if len(pendingToolCalls) > 0 {
+			// 先存 assistant 消息（含 tool_calls）
+			toolCallsMap := make([]map[string]interface{}, 0)
+			for _, tc := range pendingToolCalls {
+				toolCallsMap = append(toolCallsMap, map[string]interface{}{
+					"id":   tc.ID,
+					"type": "function",
+					"function": map[string]interface{}{
+						"name":      tc.Name,
+						"arguments": tc.Arguments,
+					},
+				})
+			}
+			e.Store.CreateChatMessage(&store.ChatMessage{
+				SessionID: session.ID,
+				RunID:     run.ID,
+				Role:      "assistant",
+				Content:   map[string]interface{}{"text": roundContent.String(), "tool_calls": toolCallsMap},
+				CreatedAt: time.Now(),
+			})
+
+			// 执行每个工具
+			for _, tc := range pendingToolCalls {
+				outCh <- RunStreamEvent{Type: "tool_start", Tool: tc.Name}
+
+				// 解析参数
+				var args map[string]interface{}
+				_ = json.Unmarshal([]byte(tc.Arguments), &args)
+
+				step := e.createStep(run, "tool_call", tc.Name, args)
+
+				// 执行工具（同步）
+				output, err := e.executeToolCallByInfo(ctx, tc)
+				status := "completed"
+				errMsg := ""
+				if err != nil {
+					status = "failed"
+					errMsg = err.Error()
+					output = fmt.Sprintf("Tool Execution Error: %v", err)
+				}
+
+				e.finishStep(step.ID, map[string]interface{}{"output": output}, status, errMsg)
+				e.saveToolOutput(run, tc.ID, output)
+
+				outCh <- RunStreamEvent{Type: "tool_end", Tool: tc.Name, Content: output}
+			}
+
+			// 继续下一轮（把工具结果喂回 LLM）
+			continue
+		}
+
+		// 无工具调用，最终回复
+		finalContent := fullResponseBuffer.String()
+		e.saveMessage(run, "assistant", finalContent, "")
+		e.Store.FinishRun(run.ID, map[string]interface{}{"response": finalContent}, "succeeded")
+		outCh <- RunStreamEvent{Type: "done"}
+		return
+	}
+
+	outCh <- RunStreamEvent{Type: "error", Content: "max steps reached"}
+	e.Store.FinishRun(run.ID, map[string]interface{}{"error": "max steps reached"}, "failed")
+}
+
+// executeToolCallByInfo 通过 ToolCallInfo 执行工具
+func (e *AgentEngine) executeToolCallByInfo(ctx context.Context, tc llm.ToolCallInfo) (string, error) {
+	toolDef := e.Store.FindMCPToolByName(tc.Name)
+	if toolDef == nil {
+		return "", fmt.Errorf("tool definition not found: %s", tc.Name)
+	}
+
+	server := e.Store.GetMCPServer(toolDef.ServerID)
+	if server == nil {
+		return "", fmt.Errorf("server not found for tool: %s", tc.Name)
+	}
+
+	executor := mcp.NewExecutor(e.Store)
+	return executor.ExecuteTool(ctx, server, tc.Name, tc.Arguments)
 }
 
 // CancelRun 异步取消任务

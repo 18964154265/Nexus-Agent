@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"example.com/agent-server/internal/store" // 引入你的 store 包
@@ -87,7 +88,152 @@ type HandoffDecision struct {
 	AdditionalFields map[string]interface{} `json:"additional_fields,omitempty"`
 }
 
-// ChatCompletion 调用大模型
+// ==========================================
+// 流式相关结构体
+// ==========================================
+
+// StreamEvent 定义流式返回的事件类型
+type StreamEvent struct {
+	Type    string `json:"type"` // "content", "tool_call", "handoff", "error", "done"
+	Content string `json:"content,omitempty"`
+
+	// 完整的工具调用信息（内部拼接完成后才发送）
+	ToolCalls []ToolCallInfo `json:"tool_calls,omitempty"`
+
+	// handoff 决策
+	Handoff *HandoffDecision `json:"handoff,omitempty"`
+
+	// 错误信息
+	Error string `json:"error,omitempty"`
+}
+
+// ToolCallInfo 工具调用信息（简化版，不依赖 openai 包）
+type ToolCallInfo struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // JSON string
+}
+
+// ChatStream 流式调用大模型，返回 channel
+func (c *Client) ChatStream(ctx context.Context, req *ChatRequest) (<-chan StreamEvent, error) {
+	messages := c.buildMessages(req)
+	tools := c.buildTools(req.Tools)
+
+	apiReq := openai.ChatCompletionRequest{
+		Model:       c.config.ModelName,
+		Messages:    messages,
+		Tools:       tools,
+		Temperature: c.config.Temperature,
+		Stream:      true,
+	}
+
+	stream, err := c.client.CreateChatCompletionStream(ctx, apiReq)
+	if err != nil {
+		return nil, fmt.Errorf("llm stream error: %w", err)
+	}
+
+	ch := make(chan StreamEvent, 10)
+
+	go func() {
+		defer close(ch)
+		defer stream.Close()
+
+		var contentBuffer strings.Builder
+		// toolCallsBuffer: map[index] -> {id, name, argsBuffer}
+		toolCallsBuffer := make(map[int]*toolCallAccumulator)
+
+		for {
+			chunk, err := stream.Recv()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				ch <- StreamEvent{Type: "error", Error: err.Error()}
+				return
+			}
+
+			if len(chunk.Choices) == 0 {
+				continue
+			}
+
+			delta := chunk.Choices[0].Delta
+			finishReason := chunk.Choices[0].FinishReason
+
+			// 1. 处理文本内容增量
+			if delta.Content != "" {
+				contentBuffer.WriteString(delta.Content)
+				ch <- StreamEvent{Type: "content", Content: delta.Content}
+			}
+
+			// 2. 处理工具调用增量（需要拼接）
+			for _, tc := range delta.ToolCalls {
+				idx := 0
+				if tc.Index != nil {
+					idx = *tc.Index
+				}
+
+				if _, ok := toolCallsBuffer[idx]; !ok {
+					toolCallsBuffer[idx] = &toolCallAccumulator{}
+				}
+				acc := toolCallsBuffer[idx]
+
+				if tc.ID != "" {
+					acc.ID = tc.ID
+				}
+				if tc.Function.Name != "" {
+					acc.Name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					acc.Args.WriteString(tc.Function.Arguments)
+				}
+			}
+
+			// 3. 检查结束原因
+			if finishReason == openai.FinishReasonToolCalls {
+				// 工具调用结束，发送完整的工具调用信息
+				var calls []ToolCallInfo
+				for i := 0; i < len(toolCallsBuffer); i++ {
+					if acc, ok := toolCallsBuffer[i]; ok {
+						calls = append(calls, ToolCallInfo{
+							ID:        acc.ID,
+							Name:      acc.Name,
+							Arguments: acc.Args.String(),
+						})
+					}
+				}
+				ch <- StreamEvent{Type: "tool_call", ToolCalls: calls}
+				return
+			}
+
+			if finishReason == openai.FinishReasonStop || finishReason == "stop" {
+				// 正常结束，解析 handoff
+				fullContent := contentBuffer.String()
+				_, handoff, _ := parseContentAndHandoff(fullContent)
+
+				if handoff != nil && handoff.TargetAgentID != "" {
+					ch <- StreamEvent{Type: "handoff", Handoff: handoff}
+				} else {
+					ch <- StreamEvent{Type: "done"}
+				}
+				return
+			}
+		}
+
+		// 流正常结束但没有明确的 finish_reason
+		ch <- StreamEvent{Type: "done"}
+	}()
+
+	return ch, nil
+}
+
+// toolCallAccumulator 用于拼接流式工具调用
+type toolCallAccumulator struct {
+	ID   string
+	Name string
+	Args strings.Builder
+}
+
+// ChatCompletion 调用大模型（同步版本，保留兼容）
 func (c *Client) ChatCompletion(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
 	// 1. 转换 History (Store -> OpenAI)
 	messages := c.buildMessages(req)

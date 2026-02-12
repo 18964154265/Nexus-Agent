@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import ReactMarkdown from "react-markdown";
-import type { ApiResponse, ChatMessage, ChatSession, Run, RunStep } from "@/types";
+import type { ApiResponse, ChatMessage, ChatSession, Run, RunStep, Agent } from "@/types";
 
 // Message interface for UI
 interface Message {
@@ -64,6 +64,13 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [isTraceDrawerOpen, setIsTraceDrawerOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // 流式消息状态
+  const [streamingContent, setStreamingContent] = useState<string>("");
+  const [streamingStatus, setStreamingStatus] = useState<string>(""); // "thinking", "tool:xxx", ""
+  
+  // 乐观更新：立刻显示用户发送的消息
+  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
 
   // Fetch messages
   const { data: messages, error, isLoading, mutate } = useSWR<ChatMessage[]>(
@@ -74,6 +81,12 @@ export default function ChatPage({ params }: ChatPageProps) {
   // Fetch session info
   const { data: session } = useSWR<ChatSession>(
     sessionId ? `/api/sessions/${sessionId}` : null,
+    fetcher
+  );
+
+  // Fetch current agent info
+  const { data: currentAgent } = useSWR<Agent>(
+    session?.agent_id ? `/api/agents/${session.agent_id}` : null,
     fetcher
   );
 
@@ -120,51 +133,53 @@ export default function ChatPage({ params }: ChatPageProps) {
       : null
   );
 
-  // Convert ChatMessage to Message format
-  const uiMessages: Message[] = (messages || []).map((msg) => {
-    const contentText = typeof msg.content === 'string' 
-      ? msg.content 
-      : msg.content?.text || JSON.stringify(msg.content);
-    
-    const run = msg.run_id ? runsMap.get(msg.run_id) : undefined;
-    const runSteps = msg.run_id && allRunSteps ? allRunSteps[msg.run_id] || [] : [];
-    
-    // Calculate latency from Run
-    let latency_ms = 0;
-    if (run && run.finished_at && run.created_at) {
-      const start = new Date(run.created_at).getTime();
-      const end = new Date(run.finished_at).getTime();
-      latency_ms = end - start;
-    }
-    
-    // Count tools from RunSteps
-    const tool_count = runSteps.filter(step => step.step_type === 'tool').length;
-    
-    // Map Run status to Message meta status
-    let metaStatus: 'success' | 'failed' | 'running' = 'success';
-    if (run) {
-      if (run.status === 'running') metaStatus = 'running';
-      else if (run.status === 'failed' || run.status === 'cancelled') metaStatus = 'failed';
-      else metaStatus = 'success';
-    }
-    
-    return {
-      id: msg.id,
-      role: msg.role as 'user' | 'assistant',
-      content: contentText,
-      run_id: msg.run_id,
-      meta: msg.run_id ? {
-        status: metaStatus,
-        tool_count,
-        latency_ms,
-      } : undefined,
-    };
-  });
+  // Convert ChatMessage to Message format (filter out tool messages)
+  const uiMessages: Message[] = (messages || [])
+    .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
+    .map((msg) => {
+      const contentText = typeof msg.content === 'string' 
+        ? msg.content 
+        : msg.content?.text || JSON.stringify(msg.content);
+      
+      const run = msg.run_id ? runsMap.get(msg.run_id) : undefined;
+      const runSteps = msg.run_id && allRunSteps ? allRunSteps[msg.run_id] || [] : [];
+      
+      // Calculate latency from Run
+      let latency_ms = 0;
+      if (run && run.finished_at && run.created_at) {
+        const start = new Date(run.created_at).getTime();
+        const end = new Date(run.finished_at).getTime();
+        latency_ms = end - start;
+      }
+      
+      // Count tools from RunSteps
+      const tool_count = runSteps.filter(step => step.step_type === 'tool').length;
+      
+      // Map Run status to Message meta status
+      let metaStatus: 'success' | 'failed' | 'running' = 'success';
+      if (run) {
+        if (run.status === 'running') metaStatus = 'running';
+        else if (run.status === 'failed' || run.status === 'cancelled') metaStatus = 'failed';
+        else metaStatus = 'success';
+      }
+      
+      return {
+        id: msg.id,
+        role: msg.role as 'user' | 'assistant',
+        content: contentText,
+        run_id: msg.run_id,
+        meta: msg.run_id ? {
+          status: metaStatus,
+          tool_count,
+          latency_ms,
+        } : undefined,
+      };
+    });
 
   // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [uiMessages]);
+  }, [uiMessages.length, streamingContent, pendingUserMessage]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,22 +188,92 @@ export default function ChatPage({ params }: ChatPageProps) {
     const userMessage = input.trim();
     setInput("");
     setIsSending(true);
+    setPendingUserMessage(userMessage); // 立刻显示用户消息
+    setStreamingContent("");
+    setStreamingStatus("thinking");
 
     try {
-      const res = await apiClient.post<ChatMessage>(`/api/sessions/${sessionId}/chat`, {
-        content: userMessage,
+      const token = localStorage.getItem("token");
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8888";
+      const response = await fetch(`${apiBaseUrl}/api/sessions/${sessionId}/chat/stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content: userMessage }),
       });
 
-      if (res.code === 0) {
-        mutate(); // Refresh messages
-      } else {
-        alert(`发送失败: ${res.message || "未知错误"}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("No reader available");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // 保留不完整的行
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr) continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+              
+              switch (event.type) {
+                case "content":
+                  setStreamingContent(prev => prev + event.content);
+                  setStreamingStatus("");
+                  break;
+                case "tool_start":
+                  setStreamingStatus(`executing: ${event.tool}`);
+                  break;
+                case "tool_end":
+                  setStreamingStatus("");
+                  break;
+                case "handoff":
+                  setStreamingStatus(`transferring to: ${event.agent_id}`);
+                  break;
+                case "error":
+                  console.error("Stream error:", event.content);
+                  setStreamingStatus("");
+                  break;
+                case "done":
+                  setStreamingStatus("");
+                  break;
+              }
+            } catch (parseError) {
+              console.error("Parse SSE error:", parseError, jsonStr);
+            }
+          }
+        }
+      }
+
+      // 流结束，刷新消息列表
+      mutate();
+      setPendingUserMessage(null); // 清除临时用户消息
+      setStreamingContent("");
+      setStreamingStatus("");
     } catch (error) {
       console.error("Send message error:", error);
       alert("发送失败，请重试");
+      setPendingUserMessage(null); // 出错也清除
     } finally {
       setIsSending(false);
+      setStreamingContent("");
+      setStreamingStatus("");
     }
   };
 
@@ -211,14 +296,14 @@ export default function ChatPage({ params }: ChatPageProps) {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="h-screen flex bg-gray-50 overflow-hidden">
       {/* Main Chat Area */}
       <div className={clsx(
-        "flex flex-col overflow-hidden transition-all duration-300 shrink-0",
+        "h-full flex flex-col transition-all duration-300",
         isTraceDrawerOpen ? "w-[calc(100%-600px)] sm:w-[calc(100%-600px)]" : "w-full"
       )}>
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shrink-0">
+        <div className="h-16 bg-white border-b border-gray-200 px-6 flex items-center justify-between flex-none">
           <div className="flex items-center space-x-3">
             <div className="h-10 w-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shrink-0">
               <Bot className="h-6 w-6" />
@@ -231,6 +316,14 @@ export default function ChatPage({ params }: ChatPageProps) {
                 {session?.agent_id ? `Agent: ${session.agent_id.slice(0, 8)}...` : "No agent"}
               </p>
             </div>
+          </div>
+          
+          {/* Current Agent Info */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+            <div className="h-2 w-2 bg-emerald-500 rounded-full animate-pulse" />
+            <span className="text-sm font-medium text-emerald-700">
+              {currentAgent?.name || "Loading..."}
+            </span>
           </div>
         </div>
 
@@ -260,20 +353,20 @@ export default function ChatPage({ params }: ChatPageProps) {
 
               {/* Message Bubble */}
               <div className={clsx(
-                "flex flex-col max-w-[75%]",
+                "flex flex-col max-w-[75%] min-w-0",
                 msg.role === "user" ? "items-end" : "items-start"
               )}>
                 <div className={clsx(
-                  "rounded-2xl px-4 py-3 shadow-sm",
+                  "rounded-2xl px-4 py-3 shadow-sm overflow-hidden w-full",
                   msg.role === "user"
                     ? "bg-white border border-gray-200 text-gray-900"
                     : "bg-white border border-gray-200 text-gray-900"
                 )}>
                   {msg.role === "user" ? (
-                    <p className="text-sm whitespace-pre-wrap text-gray-900">{msg.content}</p>
+                    <p className="text-sm whitespace-pre-wrap text-gray-900 break-words">{msg.content}</p>
                   ) : (
                     <>
-                      <div className="prose prose-sm max-w-none prose-headings:mt-0 prose-headings:mb-2 prose-headings:text-gray-900 prose-p:my-1 prose-p:text-gray-900 prose-ul:my-1 prose-ol:my-1 prose-li:text-gray-900 prose-code:text-sm prose-code:text-gray-900 prose-pre:bg-gray-100 prose-pre:border prose-pre:border-gray-200 prose-strong:text-gray-900 prose-a:text-emerald-600">
+                      <div className="prose prose-sm max-w-none prose-headings:mt-0 prose-headings:mb-2 prose-headings:text-gray-900 prose-p:my-1 prose-p:text-gray-900 prose-ul:my-1 prose-ol:my-1 prose-li:text-gray-900 prose-code:text-sm prose-code:text-gray-900 prose-pre:bg-gray-100 prose-pre:border prose-pre:border-gray-200 prose-pre:overflow-x-auto prose-strong:text-gray-900 prose-a:text-emerald-600 break-words overflow-hidden">
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </div>
                       
@@ -307,11 +400,59 @@ export default function ChatPage({ params }: ChatPageProps) {
               </div>
             </div>
           ))}
+
+          {/* 乐观更新：立刻显示用户发送的消息 */}
+          {pendingUserMessage && (
+            <div className="flex items-start gap-3 flex-row-reverse">
+              <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 bg-gray-200">
+                <span className="text-gray-900 text-xs font-medium">U</span>
+              </div>
+              <div className="flex flex-col max-w-[75%] min-w-0 items-end">
+                <div className="rounded-2xl px-4 py-3 shadow-sm overflow-hidden w-full bg-white border border-gray-200 text-gray-900">
+                  <p className="text-sm whitespace-pre-wrap text-gray-900 break-words">{pendingUserMessage}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* 流式消息显示 */}
+          {(streamingContent || streamingStatus) && (
+            <div className="flex items-start gap-3">
+              {/* Avatar */}
+              <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 bg-gray-200">
+                <Bot className="h-4 w-4 text-gray-600" />
+              </div>
+
+              {/* Message Bubble */}
+              <div className="flex flex-col max-w-[75%] min-w-0 items-start">
+                <div className="rounded-2xl px-4 py-3 shadow-sm overflow-hidden w-full bg-white border border-gray-200 text-gray-900">
+                  {streamingStatus && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>{streamingStatus}</span>
+                    </div>
+                  )}
+                  {streamingContent && (
+                    <div className="prose prose-sm max-w-none prose-p:my-1 prose-p:text-gray-900">
+                      <ReactMarkdown>{streamingContent}</ReactMarkdown>
+                    </div>
+                  )}
+                  {!streamingContent && !streamingStatus && isSending && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Thinking...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div ref={messagesEndRef} />
         </div>
 
         {/* Input Area */}
-        <div className="bg-white border-t border-gray-200 px-6 py-4 shrink-0">
+        <div className="h-20 bg-white border-t border-gray-200 px-6 py-4 flex-none">
           <form onSubmit={handleSend} className="flex items-end gap-3">
             <textarea
               value={input}

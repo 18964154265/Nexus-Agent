@@ -2,14 +2,17 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"example.com/agent-server/internal/middleware"
+	"example.com/agent-server/internal/service/runner"
 	"example.com/agent-server/internal/store"
 	"example.com/agent-server/pkg/response"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/google/uuid"
+	"github.com/hertz-contrib/sse"
 )
 
 // ==========================================
@@ -159,4 +162,74 @@ func (h *Handler) SendChatMessage(c context.Context, ctx *app.RequestContext) {
 	lastMsg := allMsgs[len(allMsgs)-1]
 
 	response.Success(ctx, toMessageResp(lastMsg))
+}
+
+// SendChatMessageStream 流式发送消息 (SSE)
+func (h *Handler) SendChatMessageStream(c context.Context, ctx *app.RequestContext) {
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		ctx.SetStatusCode(http.StatusUnauthorized)
+		ctx.WriteString("Unauthorized")
+		return
+	}
+
+	sessionID := ctx.Param("id")
+	session := h.Store.GetChatSession(sessionID)
+	if session == nil || session.UserID != userID {
+		ctx.SetStatusCode(http.StatusNotFound)
+		ctx.WriteString("Session not found")
+		return
+	}
+
+	var req SendChatReq
+	if err := ctx.BindAndValidate(&req); err != nil {
+		ctx.SetStatusCode(http.StatusBadRequest)
+		ctx.WriteString(err.Error())
+		return
+	}
+
+	// 保存用户消息
+	userMsg := &store.ChatMessage{
+		SessionID: sessionID,
+		Role:      "user",
+		Content:   createTextContent(req.Content),
+	}
+	h.Store.CreateChatMessage(userMsg)
+
+	// 创建 Run
+	run := &store.Run{
+		SessionID:    sessionID,
+		UserID:       userID,
+		AgentID:      session.AgentID,
+		TraceID:      uuid.New().String(),
+		Status:       "running",
+		InputPayload: map[string]interface{}{"content": req.Content},
+	}
+	h.Store.CreateRun(run)
+
+	// 设置 SSE 响应头
+	ctx.SetStatusCode(http.StatusOK)
+	ctx.Response.Header.Set("X-Accel-Buffering", "no") // 禁用 nginx 缓冲
+
+	// 创建 SSE Stream
+	stream := sse.NewStream(ctx)
+
+	// 创建事件通道
+	eventChan := make(chan runner.RunStreamEvent, 10)
+
+	// 异步执行 Agent
+	go h.Engine.ExecuteRunStream(run.ID, eventChan)
+
+	// 流式推送给前端
+	for event := range eventChan {
+		data, _ := json.Marshal(event)
+		err := stream.Publish(&sse.Event{
+			Event: event.Type,
+			Data:  data,
+		})
+		if err != nil {
+			// 客户端断开连接
+			return
+		}
+	}
 }
